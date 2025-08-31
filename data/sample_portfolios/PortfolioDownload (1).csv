@@ -1,0 +1,24 @@
+Account Summary
+Account,Net Account Value,Total Gain $,Total Gain %,Day's Gain Unrealized $,Day's Gain Unrealized %,Available For Withdrawal,Cash Purchasing Power
+"MyPortfolio -1749",26666.06,1337.25,5.61,.00,.00,5.27,1505.27
+
+
+View Summary - All Positions
+Filters applied: 
+Symbol,Security type(s),Sort by,Sort order,
+,All,Symbol,Asc,
+
+Symbol,Last Price $,Change $,Change %,Quantity,Price Paid $,Day's Gain $,Total Gain $,Total Gain %,Value $
+DOW,28.34,0.00,0.00,33.0000,28.2824,.0000,1.9000,.2036,935.2200
+ISRG,518.62,0.00,0.00,4.0000,531.1825,.0000,-50.2500,-2.3650,2074.4800
+KHC,27.82,0.00,0.00,11.0000,26.19,.0000,17.9300,6.2237,306.0200
+LYB,63.21,0.00,0.00,6.0000,59.2083,.0000,24.0100,6.7586,379.2600
+MITT,7.63,0.00,0.00,53.0000,7.3841,.0000,13.0350,3.3307,404.3900
+UPS,99.22,0.00,0.00,6.0000,98.0033,.0000,7.3000,1.2415,595.3200
+XLP,80.89,0.00,0.00,30.5130,81.0533,.0000,-4.9834,-.2015,2468.1966
+CASH,,,,,,,,,1505.27,
+TOTAL,,,,,23823.54,.00,1337.25,5.61,26666.06,
+
+
+
+Generated at Jul 21 2025 08:58 AM ET
