@@ -963,6 +963,50 @@ class PortfolioDashboard:
             st.warning("No signals available")
             return
         
+        # Add detailed explanations section
+        with st.expander("📘 Understanding Your Analysis Metrics", expanded=False):
+            st.markdown("""
+            ### 🎯 **Confidence Score (0-100%)**
+            Measures how reliable the signal is based on multiple factors:
+            - **Momentum Strength**: Stronger trends = higher confidence
+            - **Trend Consistency**: Consistent direction over recent periods
+            - **Distance from Zero**: Momentum values further from zero are more reliable
+            - **Volume Confirmation**: Higher trading volume supports the signal
+            
+            **Interpretation:**
+            - 🟢 **80-100%**: Very High - Strong conviction signals
+            - 🟡 **60-79%**: High - Good signals with minor uncertainty
+            - 🟠 **40-59%**: Medium - Moderate signals, proceed with caution
+            - 🔴 **20-39%**: Low - Weak signals, consider avoiding
+            - ⚫ **0-19%**: Very Low - Avoid these signals
+            
+            ### 💪 **Strength Score (0-100%)**
+            Measures the power/magnitude of the momentum movement:
+            - Based on how far current momentum deviates from its recent average
+            - Higher values indicate stronger directional movement
+            - Considers price velocity and acceleration
+            
+            **Interpretation:**
+            - 🟢 **50-100%**: Strong momentum - significant price movement expected
+            - 🟡 **30-49%**: Moderate momentum - steady movement likely
+            - 🔴 **0-29%**: Weak momentum - limited price movement expected
+            
+            ### ⚖️ **Risk Level**
+            Assesses the potential risk of the trade:
+            - **LOW**: High momentum strength + low volatility = safer trades
+            - **MEDIUM**: Moderate factors = standard risk level
+            - **HIGH**: Low momentum strength OR high volatility = riskier trades
+            
+            **Factors considered:**
+            - Recent price volatility (20-day)
+            - Momentum strength (stronger = lower risk)
+            - Trend consistency
+            
+            💡 **Pro Tip**: Look for signals with Confidence ≥60%, Strength ≥30%, and LOW-MEDIUM risk for the best opportunities.
+            """)
+        
+        st.markdown("---")
+        
         # Create enhanced signals dataframe with badges and source identification
         signals_data = []
         portfolio = st.session_state.portfolio
@@ -1024,7 +1068,8 @@ class PortfolioDashboard:
         styled_df = df_clean.style.map(color_signal_cells, subset=['Signal'])
         st.dataframe(styled_df, use_container_width=True, height=400)
         
-        # Summary metrics
+        # Summary metrics with better styling
+        st.markdown("### 📊 **Signal Summary**")
         col1, col2, col3, col4 = st.columns(4)
         
         buy_signals = sum(1 for s in signals.values() if s.signal == SignalType.BUY)
@@ -1032,16 +1077,98 @@ class PortfolioDashboard:
         hold_signals = sum(1 for s in signals.values() if s.signal == SignalType.HOLD)
         avg_confidence = np.mean([s.confidence for s in signals.values()])
         
-        col1.metric("🟢 Buy Signals", buy_signals)
-        col2.metric("🔴 Sell Signals", sell_signals)  
-        col3.metric("⚪ Hold Signals", hold_signals)
-        col4.metric("🎯 Avg Confidence", f"{avg_confidence:.0%}")
+        with col1:
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #28a745, #20c997); color: white; padding: 1rem; border-radius: 10px; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{}</div>
+                <div style="font-size: 0.9rem; opacity: 0.9;">🟢 Buy Signals</div>
+            </div>
+            """.format(buy_signals), unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #dc3545, #e83e8c); color: white; padding: 1rem; border-radius: 10px; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{}</div>
+                <div style="font-size: 0.9rem; opacity: 0.9;">🔴 Sell Signals</div>
+            </div>
+            """.format(sell_signals), unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #6c757d, #adb5bd); color: white; padding: 1rem; border-radius: 10px; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{}</div>
+                <div style="font-size: 0.9rem; opacity: 0.9;">⚪ Hold Signals</div>
+            </div>
+            """.format(hold_signals), unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown("""
+            <div style="background: linear-gradient(135deg, #007bff, #6f42c1); color: white; padding: 1rem; border-radius: 10px; text-align: center;">
+                <div style="font-size: 2rem; font-weight: bold;">{:.0%}</div>
+                <div style="font-size: 0.9rem; opacity: 0.9;">🎯 Avg Confidence</div>
+            </div>
+            """.format(avg_confidence), unsafe_allow_html=True)
     
     def _render_charts(self):
         """Render interactive charts."""
         if not st.session_state.momentum_results or not st.session_state.market_data:
             st.warning("No data available for charts")
             return
+        
+        # Add TEMA and momentum interpretation guide
+        with st.expander("📈 Understanding Momentum Charts & TEMA Indicator", expanded=False):
+            st.markdown("""
+            ### 🔍 **What is TEMA (Triple Exponential Moving Average)?**
+            
+            **TEMA** is a sophisticated smoothing technique that reduces lag while maintaining responsiveness:
+            - **Triple Smoothing**: Applies exponential smoothing three times to reduce noise
+            - **Lag Reduction**: Much more responsive than traditional moving averages
+            - **Trend Following**: Excellent for identifying trend changes early
+            
+            ### 📉 **Natural Momentum Indicator Explained**
+            
+            Our momentum calculation uses **natural logarithms** of price changes:
+            1. **Log Price Changes**: `ln(price_today / price_yesterday)` - captures true percentage moves
+            2. **TEMA Smoothing**: Applied to reduce noise and false signals
+            3. **Zero Line**: The critical reference point for trend direction
+            
+            ### 🎯 **How to Interpret the Charts**
+            
+            **Top Panel - Price Action:**
+            - 💰 **Price Line**: Current stock price movement
+            - 📈 **Volume Bars**: Trading activity (darker = higher volume)
+            - 🔵 **TEMA Line**: Smoothed trend direction
+            
+            **Bottom Panel - Momentum Oscillator:**
+            - ⬆️ **Above Zero**: Bullish momentum (upward pressure)
+            - ⬇️ **Below Zero**: Bearish momentum (downward pressure)
+            - 🔴 **Signal Line**: Secondary confirmation line
+            - 🎯 **Crossovers**: Key signal generation points
+            
+            ### 🚦 **Trading Signal Rules**
+            
+            **BUY Signals:** 
+            - Momentum crosses above zero line ⬆️
+            - Momentum is strengthening (upward slope)
+            - High confidence and strength scores
+            
+            **SELL Signals:**
+            - Momentum crosses below zero line ⬇️
+            - Momentum is weakening (downward slope) 
+            - High confidence and strength scores
+            
+            **HOLD Signals:**
+            - Momentum near zero (sideways movement)
+            - Low confidence or strength scores
+            - Conflicting indicators
+            
+            💡 **Pro Tips:**
+            - Look for **divergences**: When price moves up but momentum moves down (or vice versa)
+            - **Volume confirmation**: Strong moves with high volume are more reliable
+            - **Multiple timeframe analysis**: Check longer-term trends for context
+            """)
+        
+        st.markdown("---")
         
         # Select symbol for detailed chart
         symbols = list(st.session_state.momentum_results.keys())
@@ -1051,8 +1178,15 @@ class PortfolioDashboard:
             self._render_symbol_chart(selected_symbol)
         
         # Portfolio overview chart
+        st.markdown("---")
         st.subheader("📊 Portfolio Momentum Overview")
+        st.info("📊 **Overview Chart**: Shows momentum distribution across your entire portfolio. Bubble size represents position value, color indicates signal strength.")
         self._render_portfolio_overview_chart()
+        
+        # Add technical indicators table
+        st.markdown("---")
+        st.subheader("📋 Technical Indicators Summary")
+        self._render_technical_indicators_table()
     
     def _render_symbol_chart(self, symbol: str):
         """Render detailed chart for a specific symbol."""
@@ -1542,107 +1676,308 @@ class PortfolioDashboard:
             holdings_df = pd.DataFrame(holdings_data)
             st.dataframe(holdings_df, use_container_width=True, height=300)
             
-            # Portfolio summary metrics
+            # Portfolio summary metrics with better styling
             st.markdown("**📈 Portfolio Metrics**")
             col_a, col_b, col_c = st.columns(3)
-            col_a.metric("Total Positions", len(valid_positions))
-            col_b.metric("Total Value", f"${total_value:,.2f}")
-            col_c.metric("Largest Position", f"{max(valid_positions, key=lambda x: x.market_value).symbol}")
+            
+            # Fixed font sizing issues
+            with col_a:
+                st.markdown("""
+                <div style="background: #e3f2fd; padding: 0.8rem; border-radius: 8px; text-align: center; border-left: 4px solid #2196f3;">
+                    <div style="font-size: 1.5rem; font-weight: bold; color: #1976d2;">{}</div>
+                    <div style="font-size: 0.85rem; color: #666; margin-top: 0.2rem;">Total Positions</div>
+                </div>
+                """.format(len(valid_positions)), unsafe_allow_html=True)
+            
+            with col_b:
+                st.markdown("""
+                <div style="background: #e8f5e8; padding: 0.8rem; border-radius: 8px; text-align: center; border-left: 4px solid #4caf50;">
+                    <div style="font-size: 1.2rem; font-weight: bold; color: #388e3c;">${:,.0f}</div>
+                    <div style="font-size: 0.85rem; color: #666; margin-top: 0.2rem;">Total Value</div>
+                </div>
+                """.format(total_value), unsafe_allow_html=True)
+            
+            with col_c:
+                largest_symbol = max(valid_positions, key=lambda x: x.market_value).symbol
+                st.markdown("""
+                <div style="background: #fff3e0; padding: 0.8rem; border-radius: 8px; text-align: center; border-left: 4px solid #ff9800;">
+                    <div style="font-size: 1.2rem; font-weight: bold; color: #f57c00;">{}</div>
+                    <div style="font-size: 0.85rem; color: #666; margin-top: 0.2rem;">Largest Position</div>
+                </div>
+                """.format(largest_symbol), unsafe_allow_html=True)
         
         with col2:
-            # Portfolio allocation pie chart
-            st.markdown("**🥧 Portfolio Allocation**")
+            # Professional horizontal bar chart for allocation
+            st.markdown("**📋 Portfolio Allocation**")
             
-            # Prepare data for pie chart
-            symbols = [pos.symbol for pos in valid_positions]
-            values = [pos.market_value for pos in valid_positions]
+            # Prepare data for bar chart - show all positions
+            sorted_positions = sorted(valid_positions, key=lambda x: x.market_value, reverse=True)
+            total_value = sum(pos.market_value for pos in valid_positions)
             
-            # Group smaller positions for cleaner visualization
-            if len(valid_positions) > 8:
-                # Show top 7 positions individually, group the rest
-                sorted_positions = sorted(zip(symbols, values), key=lambda x: x[1], reverse=True)
-                top_positions = sorted_positions[:7]
-                other_positions = sorted_positions[7:]
-                
-                display_symbols = [pos[0] for pos in top_positions]
-                display_values = [pos[1] for pos in top_positions]
-                
-                if other_positions:
-                    other_total = sum(pos[1] for pos in other_positions)
-                    display_symbols.append(f"Others ({len(other_positions)})")
-                    display_values.append(other_total)
-            else:
-                display_symbols = symbols
-                display_values = values
+            symbols = [pos.symbol for pos in sorted_positions]
+            values = [pos.market_value for pos in sorted_positions]
+            percentages = [(val/total_value)*100 for val in values]
             
-            # Create professional pie chart
-            fig_pie = go.Figure(data=[
-                go.Pie(
-                    labels=display_symbols,
-                    values=display_values,
-                    hole=0.4,  # Donut style
-                    marker=dict(
-                        colors=px.colors.qualitative.Set3[:len(display_symbols)],
-                        line=dict(color='white', width=2)
-                    ),
-                    textinfo='label+percent',
-                    textfont=dict(size=11),
-                    hovertemplate='<b>%{label}</b><br>Value: $%{value:,.2f}<br>Percentage: %{percent}<extra></extra>'
-                )
-            ])
+            # Create professional horizontal bar chart
+            fig_bar = go.Figure()
             
-            fig_pie.update_layout(
-                height=400,
-                showlegend=True,
-                legend=dict(
-                    orientation="v",
-                    yanchor="middle",
-                    y=0.5,
-                    xanchor="left",
-                    x=1.02
+            # Add bars with gradient colors
+            colors = px.colors.sample_colorscale('viridis', [i/len(symbols) for i in range(len(symbols))])
+            
+            fig_bar.add_trace(go.Bar(
+                y=symbols,
+                x=percentages,
+                orientation='h',
+                marker=dict(
+                    color=colors,
+                    line=dict(color='rgba(255,255,255,0.8)', width=1)
                 ),
-                margin=dict(t=20, b=20, l=20, r=80),
-                font=dict(size=10)
+                text=[f'${val:,.0f} ({pct:.1f}%)' for val, pct in zip(values, percentages)],
+                textposition='inside',
+                textfont=dict(color='white', size=10, family='Arial'),
+                hovertemplate='<b>%{y}</b><br>Value: $%{x:.1f}k<br>Percentage: %{x:.1f}%<extra></extra>',
+                showlegend=False
+            ))
+            
+            fig_bar.update_layout(
+                height=400,
+                title=dict(
+                    text='Portfolio Weights by Position',
+                    x=0.5,
+                    font=dict(size=14, color='#2c3e50')
+                ),
+                xaxis=dict(
+                    title='Allocation (%)',
+                    showgrid=True,
+                    gridcolor='rgba(128,128,128,0.2)',
+                    zeroline=False,
+                    tickfont=dict(size=10)
+                ),
+                yaxis=dict(
+                    title='',
+                    tickfont=dict(size=10, color='#2c3e50'),
+                    categoryorder='total ascending'
+                ),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                margin=dict(t=50, b=20, l=80, r=20),
+                font=dict(family='Arial, sans-serif')
             )
             
-            st.plotly_chart(fig_pie, use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(fig_bar, use_container_width=True, config={'displayModeBar': False})
         
         # Additional insights
         st.markdown("---")
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            # Concentration analysis
+            # Concentration analysis with fixed sizing
             top_3_value = sum(sorted([pos.market_value for pos in valid_positions], reverse=True)[:3])
             concentration = (top_3_value / total_value) * 100 if total_value > 0 else 0
-            st.metric(
-                "Top 3 Concentration", 
-                f"{concentration:.1f}%",
-                help="Percentage of portfolio in top 3 positions"
-            )
+            st.markdown("""
+            <div style="background: #f3e5f5; padding: 0.8rem; border-radius: 8px; text-align: center; border-left: 4px solid #9c27b0;">
+                <div style="font-size: 1.3rem; font-weight: bold; color: #7b1fa2;">{:.1f}%</div>
+                <div style="font-size: 0.8rem; color: #666; margin-top: 0.2rem;">Top 3 Concentration</div>
+                <div style="font-size: 0.7rem; color: #888; margin-top: 0.1rem;">% of portfolio in top 3 positions</div>
+            </div>
+            """.format(concentration), unsafe_allow_html=True)
         
         with col2:
-            # Average position size
+            # Average position size with fixed sizing
             avg_position = total_value / len(valid_positions) if valid_positions else 0
-            st.metric(
-                "Avg Position Size",
-                f"${avg_position:,.2f}",
-                help="Average market value per position"
-            )
+            st.markdown("""
+            <div style="background: #e1f5fe; padding: 0.8rem; border-radius: 8px; text-align: center; border-left: 4px solid #03a9f4;">
+                <div style="font-size: 1.1rem; font-weight: bold; color: #0288d1;">${:,.0f}</div>
+                <div style="font-size: 0.8rem; color: #666; margin-top: 0.2rem;">Avg Position Size</div>
+                <div style="font-size: 0.7rem; color: #888; margin-top: 0.1rem;">Average market value per position</div>
+            </div>
+            """.format(avg_position), unsafe_allow_html=True)
         
         with col3:
-            # Smallest vs Largest ratio
+            # Smallest vs Largest ratio with fixed sizing
             if valid_positions:
                 largest = max(pos.market_value for pos in valid_positions)
                 smallest = min(pos.market_value for pos in valid_positions)
                 ratio = largest / smallest if smallest > 0 else 0
-                st.metric(
-                    "Size Ratio (L/S)",
-                    f"{ratio:.1f}x",
-                    help="Largest position vs smallest position ratio"
-                )
+                st.markdown("""
+                <div style="background: #fce4ec; padding: 0.8rem; border-radius: 8px; text-align: center; border-left: 4px solid #e91e63;">
+                    <div style="font-size: 1.3rem; font-weight: bold; color: #c2185b;">{:.1f}x</div>
+                    <div style="font-size: 0.8rem; color: #666; margin-top: 0.2rem;">Size Ratio (L/S)</div>
+                    <div style="font-size: 0.7rem; color: #888; margin-top: 0.1rem;">Largest position vs smallest</div>
+                </div>
+                """.format(ratio), unsafe_allow_html=True)
         
-        st.info("💡 **Ready for Analysis:** Upload complete! Use the sidebar to configure settings and run momentum analysis.")
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            text-align: center;
+            margin-top: 1rem;
+        ">
+            <div style="font-size: 1.1rem; margin-bottom: 0.5rem;">💡</div>
+            <div style="font-weight: bold; font-size: 1rem;">Ready for Analysis!</div>
+            <div style="opacity: 0.9; font-size: 0.9rem; margin-top: 0.3rem;">
+                Upload complete! Use the sidebar to configure settings and run momentum analysis.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    def _render_technical_indicators_table(self):
+        """Render holistic technical indicators table."""
+        if not st.session_state.momentum_results or not st.session_state.market_data:
+            st.warning("No data available for technical indicators")
+            return
+        
+        st.info("📋 **Technical Indicators**: Key metrics for each symbol to complement the momentum analysis.")
+        
+        indicators_data = []
+        
+        for symbol, momentum_result in st.session_state.momentum_results.items():
+            try:
+                market_data = st.session_state.market_data[symbol]
+                signal = st.session_state.signals[symbol]
+                
+                # Calculate additional technical indicators
+                prices = market_data.prices['Close'] if 'Close' in market_data.prices.columns else market_data.prices.iloc[:, 0]
+                current_price = prices.iloc[-1] if len(prices) > 0 else 0
+                
+                # Price momentum (current vs 20-day average)
+                price_20d = prices.iloc[-20:].mean() if len(prices) >= 20 else current_price
+                price_momentum = ((current_price - price_20d) / price_20d * 100) if price_20d > 0 else 0
+                
+                # Volatility (20-day standard deviation)
+                if len(prices) >= 20:
+                    returns = prices.pct_change().dropna()
+                    volatility = returns.std() * np.sqrt(252) * 100  # Annualized
+                else:
+                    volatility = 0
+                
+                # Create interpretations based on combined metrics
+                interpretation = self._interpret_technical_indicators(
+                    momentum_result.current_momentum,
+                    signal.confidence,
+                    momentum_result.strength,
+                    price_momentum,
+                    volatility,
+                    signal.signal.value
+                )
+                
+                indicators_data.append({
+                    'Symbol': symbol,
+                    'TEMA': f"{momentum_result.current_momentum:.4f}",
+                    'TEMA_Interp': f"{'Bullish' if momentum_result.current_momentum > 0 else 'Bearish'} momentum",
+                    'CONF': f"{signal.confidence:.0%}",
+                    'CONF_Interp': f"{'High' if signal.confidence > 0.6 else 'Medium' if signal.confidence > 0.4 else 'Low'} conviction",
+                    'STR': f"{momentum_result.strength:.0%}",
+                    'STR_Interp': f"{'Strong' if momentum_result.strength > 0.5 else 'Moderate' if momentum_result.strength > 0.3 else 'Weak'} movement",
+                    'PM': f"{price_momentum:+.1f}%",
+                    'PM_Interp': f"{'Rising' if price_momentum > 2 else 'Declining' if price_momentum < -2 else 'Sideways'} trend",
+                    'VOL': f"{volatility:.0f}%",
+                    'VOL_Interp': f"{'High' if volatility > 30 else 'Medium' if volatility > 15 else 'Low'} risk",
+                    'Overall_Interpretation': interpretation
+                })
+                
+            except Exception as e:
+                logger.error(f"Error calculating indicators for {symbol}: {str(e)}")
+                continue
+        
+        if not indicators_data:
+            st.warning("No technical indicators could be calculated")
+            return
+        
+        # Group by symbol for better display
+        symbols = [item['Symbol'] for item in indicators_data]
+        selected_symbol = st.selectbox("Select symbol for detailed technical analysis:", symbols, key="tech_indicators_symbol")
+        
+        if selected_symbol:
+            symbol_indicators = [item for item in indicators_data if item['Symbol'] == selected_symbol][0]
+            
+            # Display technical indicators for selected symbol
+            st.markdown(f"### 🔍 Technical Analysis: **{selected_symbol}**")
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                # Create the 4-column table as requested
+                table_data = [
+                    {'Abbreviation': 'TEMA', 'Name': 'Triple Exponential Moving Average', 'Value': symbol_indicators['TEMA'], 'Interpretation': symbol_indicators['TEMA_Interp']},
+                    {'Abbreviation': 'CONF', 'Name': 'Confidence Score', 'Value': symbol_indicators['CONF'], 'Interpretation': symbol_indicators['CONF_Interp']},
+                    {'Abbreviation': 'STR', 'Name': 'Strength Score', 'Value': symbol_indicators['STR'], 'Interpretation': symbol_indicators['STR_Interp']},
+                    {'Abbreviation': 'PM20', 'Name': 'Price Momentum (20D)', 'Value': symbol_indicators['PM'], 'Interpretation': symbol_indicators['PM_Interp']},
+                    {'Abbreviation': 'VOL', 'Name': 'Volatility (Annual)', 'Value': symbol_indicators['VOL'], 'Interpretation': symbol_indicators['VOL_Interp']}
+                ]
+                
+                display_df = pd.DataFrame(table_data)
+                
+                # Style the dataframe
+                def color_interpretation(val):
+                    if any(word in val.lower() for word in ['bullish', 'high', 'strong', 'rising']):
+                        return 'background-color: #d4edda; color: #155724;'
+                    elif any(word in val.lower() for word in ['bearish', 'low', 'weak', 'declining']):
+                        return 'background-color: #f8d7da; color: #721c24;'
+                    else:
+                        return 'background-color: #e2e3e5; color: #383d41;'
+                
+                styled_df = display_df.style.map(color_interpretation, subset=['Interpretation'])
+                st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            
+            with col2:
+                # Overall assessment card
+                st.markdown("""
+                <div style="
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 1.5rem;
+                    border-radius: 12px;
+                    text-align: center;
+                ">
+                    <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 1rem;">🎯 Overall Assessment</div>
+                    <div style="font-size: 0.9rem; line-height: 1.4; opacity: 0.95;">{}</div>
+                </div>
+                """.format(symbol_indicators['Overall_Interpretation']), unsafe_allow_html=True)
+    
+    def _interpret_technical_indicators(self, tema_momentum, confidence, strength, price_momentum, volatility, signal_type):
+        """Generate holistic interpretation of technical indicators."""
+        
+        # Assess overall momentum
+        if tema_momentum > 0.01 and confidence > 0.6 and strength > 0.4:
+            momentum_assessment = "Strong bullish momentum with high conviction"
+        elif tema_momentum < -0.01 and confidence > 0.6 and strength > 0.4:
+            momentum_assessment = "Strong bearish momentum with high conviction"
+        elif abs(tema_momentum) < 0.005:
+            momentum_assessment = "Neutral momentum - sideways consolidation"
+        elif confidence < 0.4:
+            momentum_assessment = "Uncertain momentum - low conviction signals"
+        else:
+            momentum_assessment = "Moderate momentum with mixed signals"
+        
+        # Risk assessment
+        if volatility > 30:
+            risk_note = "High volatility increases risk"
+        elif volatility < 15:
+            risk_note = "Low volatility suggests stability"
+        else:
+            risk_note = "Moderate volatility - standard risk"
+        
+        # Price trend confirmation
+        if abs(price_momentum) < 2:
+            trend_note = "Price trend is neutral"
+        elif (price_momentum > 2 and tema_momentum > 0) or (price_momentum < -2 and tema_momentum < 0):
+            trend_note = "Price trend confirms momentum signal"
+        else:
+            trend_note = "Price trend diverges from momentum"
+        
+        # Overall recommendation context
+        if signal_type == 'BUY' and confidence > 0.6:
+            recommendation = "Consider buying on strength"
+        elif signal_type == 'SELL' and confidence > 0.6:
+            recommendation = "Consider selling/avoiding"
+        else:
+            recommendation = "Hold position or wait for clearer signals"
+        
+        return f"{momentum_assessment}. {trend_note}. {risk_note}. {recommendation}."
 
 
 def main():
