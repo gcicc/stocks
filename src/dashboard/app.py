@@ -242,20 +242,30 @@ class PortfolioDashboard:
         with st.sidebar:
             st.header("📁 Portfolio Upload")
             
-            # Enhanced file upload with tooltip
+            # Enhanced file upload section
             st.markdown("""
-            <div class="tooltip">
-                📁 Portfolio Upload
-                <span class="tooltiptext">
-                    <strong>Supported Formats:</strong><br>
-                    • Charles Schwab: Positions export<br>
-                    • Fidelity: Portfolio Positions download<br>
-                    • TD Ameritrade: My Account → Positions<br>
-                    • E*TRADE: Portfolio summary<br>
-                    • Generic CSV with Symbol, Quantity, Value columns
-                </span>
+            <div style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1rem;
+                border-radius: 10px;
+                margin-bottom: 1rem;
+                text-align: center;
+            ">
+                <div style="font-size: 1.2rem; margin-bottom: 0.5rem;">📁</div>
+                <div style="font-weight: bold;">Portfolio Upload</div>
             </div>
             """, unsafe_allow_html=True)
+            
+            with st.expander("📋 Supported Broker Formats", expanded=False):
+                st.markdown("""
+                **Supported Formats:**
+                - 📊 Charles Schwab: Positions export
+                - 💼 Fidelity: Portfolio Positions download  
+                - 🏦 TD Ameritrade: My Account → Positions
+                - 💹 E*TRADE: Portfolio summary
+                - 📈 Generic CSV with Symbol, Quantity, Value columns
+                """)
             
             uploaded_file = st.file_uploader(
                 "Choose your portfolio CSV file",
@@ -270,20 +280,16 @@ class PortfolioDashboard:
             if st.session_state.portfolio is not None:
                 st.header("⚙️ Analysis Settings")
                 
-                # Enhanced symbol limit with tooltip
-                st.markdown("""
-                <div class="tooltip">
-                    🎯 Max Symbols to Analyze
-                    <span class="tooltiptext">
-                        <strong>Performance Optimization:</strong><br>
-                        • 5-15: Ultra-fast analysis (~5-8 seconds)<br>
-                        • 15-30: Standard analysis (~8-12 seconds)<br>
-                        • 30-50: Comprehensive analysis (~12-15 seconds)<br>
-                        <br>
-                        <strong>Tip:</strong> Start with 20 symbols for optimal balance.
-                    </span>
-                </div>
-                """, unsafe_allow_html=True)
+                # Enhanced symbol limit section
+                with st.expander("🎯 Performance Guidelines", expanded=False):
+                    st.markdown("""
+                    **Analysis Speed by Symbol Count:**
+                    - 🚀 5-15 symbols: Ultra-fast (~5-8 seconds)
+                    - ⚡ 15-30 symbols: Standard (~8-12 seconds)  
+                    - 📊 30-50 symbols: Comprehensive (~12-15 seconds)
+                    
+                    **💡 Tip:** Start with 20 symbols for optimal balance.
+                    """)
                 
                 max_symbols = st.slider(
                     "Max symbols to analyze", 
@@ -293,25 +299,24 @@ class PortfolioDashboard:
                     help="Limit symbols for faster analysis"
                 )
                 
-                # Enhanced analysis period with tooltip
-                st.markdown("""
-                <div class="tooltip">
-                    📈 Analysis Period
-                    <span class="tooltiptext">
-                        <strong>Historical Data Period:</strong><br>
-                        • 6mo: Short-term momentum (reactive)<br>
-                        • 1y: Balanced momentum (recommended)<br>
-                        • 2y: Long-term momentum (stable)<br>
-                        <br>
-                        <strong>Natural Momentum Algorithm:</strong><br>
-                        Uses TEMA smoothing with natural log transformations for enhanced signal clarity.
-                    </span>
-                </div>
-                """, unsafe_allow_html=True)
+                # Enhanced analysis period section
+                with st.expander("📈 Analysis Period Guide", expanded=False):
+                    st.markdown("""
+                    **Historical Data Periods:**
+                    - 📅 6mo: Short-term momentum (reactive signals)
+                    - ⚖️ 1y: Balanced momentum (recommended)
+                    - 📊 2y: Medium-term momentum (stable trends)
+                    - 📈 3y: Long-term momentum (strong trends)
+                    - 🏔️ 4y: Extended analysis (business cycles)
+                    - 📜 5y: Maximum historical depth (comprehensive)
+                    
+                    **🧠 Natural Momentum Algorithm:**
+                    Uses TEMA smoothing with natural log transformations for enhanced signal clarity.
+                    """)
                 
                 period = st.selectbox(
                     "Analysis period",
-                    options=["6mo", "1y", "2y"],
+                    options=["6mo", "1y", "2y", "3y", "4y", "5y"],
                     index=1,
                     help="Historical data period for momentum calculation"
                 )
@@ -337,12 +342,9 @@ class PortfolioDashboard:
                 
                 st.success(f"✅ Parsed {len(portfolio.positions)} positions from {filename}")
                 
-                # Show quick preview
+                # Show portfolio distribution graphics immediately after upload
                 if len(portfolio.positions) > 0:
-                    symbols_preview = ", ".join(portfolio.symbols[:5])
-                    if len(portfolio.symbols) > 5:
-                        symbols_preview += f" ... (+{len(portfolio.symbols)-5} more)"
-                    st.info(f"**Symbols found:** {symbols_preview}")
+                    self._render_portfolio_distribution(portfolio)
                 
         except Exception as e:
             st.error(f"❌ Error parsing portfolio file: {str(e)}")
@@ -789,34 +791,33 @@ class PortfolioDashboard:
         
         df = pd.DataFrame(signals_data)
         
-        # Display dataframe with HTML content
-        st.markdown(df.to_html(escape=False, index=False, classes='dataframe'), unsafe_allow_html=True)
+        # Create a cleaner dataframe display without HTML badges
+        # Remove HTML from Signal column for proper display
+        df_clean = df.copy()
+        for i, row in df_clean.iterrows():
+            signal_val = row['Signal']
+            if '<div' in str(signal_val):
+                # Extract signal type from HTML
+                if 'BUY' in signal_val:
+                    df_clean.at[i, 'Signal'] = 'BUY'
+                elif 'SELL' in signal_val:
+                    df_clean.at[i, 'Signal'] = 'SELL'
+                else:
+                    df_clean.at[i, 'Signal'] = 'HOLD'
         
-        # Add custom styling for the dataframe
-        st.markdown("""
-        <style>
-        .dataframe {
-            border-collapse: collapse;
-            margin: 1rem 0;
-            font-size: 0.9rem;
-            width: 100%;
-        }
-        .dataframe th {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            font-weight: 600;
-            padding: 12px;
-            text-align: left;
-        }
-        .dataframe td {
-            padding: 8px 12px;
-            border-bottom: 1px solid #ddd;
-        }
-        .dataframe tr:hover {
-            background-color: #f8f9fa;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        # Color coding function for signals
+        def color_signal_cells(val):
+            if val == 'BUY':
+                return 'background-color: #d4edda; color: #155724; font-weight: bold;'
+            elif val == 'SELL':
+                return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+            elif val == 'HOLD':
+                return 'background-color: #e2e3e5; color: #383d41; font-weight: bold;'
+            return ''
+        
+        # Apply styling and display
+        styled_df = df_clean.style.map(color_signal_cells, subset=['Signal'])
+        st.dataframe(styled_df, use_container_width=True, height=400)
         
         # Summary metrics
         col1, col2, col3, col4 = st.columns(4)
@@ -1115,9 +1116,7 @@ class PortfolioDashboard:
                     name=signal_type,
                     marker=dict(
                         color=colors[signal_type],
-                        size=data['Confidence'] * 0.8,  # Size based on confidence
-                        sizemin=8,
-                        sizemax=40,
+                        size=np.clip(data['Confidence'] * 0.4, 8, 30),  # Size based on confidence, clamped
                         line=dict(width=2, color='white'),
                         opacity=0.8
                     ),
@@ -1230,6 +1229,8 @@ class PortfolioDashboard:
     def _render_footer(self):
         """Render professional footer."""
         st.markdown("---")
+        
+        # Create footer with proper HTML structure
         st.markdown("""
         <div style="
             text-align: center;
@@ -1240,38 +1241,203 @@ class PortfolioDashboard:
             border-radius: 10px;
             margin-top: 2rem;
         ">
-            <div style="margin-bottom: 1rem;">
-                <strong style="color: #495057;">Portfolio Intelligence Platform</strong><br>
-                Powered by Natural Momentum Algorithm & AI Analysis
-            </div>
-            
-            <div style="display: flex; justify-content: center; gap: 2rem; margin-bottom: 1rem; flex-wrap: wrap;">
-                <div class="tooltip">
-                    📈 <strong>TEMA Smoothing</strong>
-                    <span class="tooltiptext">
-                        Triple Exponential Moving Average with natural log transformations for enhanced signal detection.
-                    </span>
-                </div>
-                <div class="tooltip">
-                    🤖 <strong>AI Confidence Scoring</strong>
-                    <span class="tooltiptext">
-                        Machine learning algorithms analyze multiple factors to provide confidence levels for each signal.
-                    </span>
-                </div>
-                <div class="tooltip">
-                    ⚡ <strong>Real-time Processing</strong>
-                    <span class="tooltiptext">
-                        Parallel data fetching and processing for ultra-fast analysis of your entire portfolio.
-                    </span>
-                </div>
-            </div>
-            
-            <div style="font-size: 0.8rem; opacity: 0.8;">
-                ⚠️ <strong>Disclaimer:</strong> This platform provides technical analysis for educational purposes. 
-                Always consult with a financial advisor before making investment decisions.
+            <div style="margin-bottom: 1.5rem;">
+                <strong style="color: #495057; font-size: 1.1rem;">Portfolio Intelligence Platform</strong><br>
+                <span style="color: #6c757d;">Powered by Natural Momentum Algorithm & AI Analysis</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
+        
+        # Add feature highlights in columns for better layout
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("""
+            <div style="text-align: center; padding: 1rem; background: white; border-radius: 10px; margin: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📈</div>
+                <strong style="color: #495057;">TEMA Smoothing</strong><br>
+                <small style="color: #6c757d;">Triple Exponential Moving Average with natural log transformations</small>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("""
+            <div style="text-align: center; padding: 1rem; background: white; border-radius: 10px; margin: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🤖</div>
+                <strong style="color: #495057;">AI Confidence Scoring</strong><br>
+                <small style="color: #6c757d;">Machine learning algorithms for signal confidence</small>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown("""
+            <div style="text-align: center; padding: 1rem; background: white; border-radius: 10px; margin: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚡</div>
+                <strong style="color: #495057;">Real-time Processing</strong><br>
+                <small style="color: #6c757d;">Ultra-fast parallel analysis of your entire portfolio</small>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Add disclaimer
+        st.markdown("""
+        <div style="
+            text-align: center;
+            padding: 1rem;
+            margin-top: 1rem;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            color: #856404;
+            font-size: 0.9rem;
+        ">
+            ⚠️ <strong>Disclaimer:</strong> This platform provides technical analysis for educational purposes. 
+            Always consult with a financial advisor before making investment decisions.
+        </div>
+        """, unsafe_allow_html=True)
+    
+    def _render_portfolio_distribution(self, portfolio):
+        """Render preliminary portfolio distribution graphics."""
+        st.markdown("---")
+        st.subheader("📊 Portfolio Overview")
+        
+        # Filter out CASH, TOTAL, and invalid positions for analysis
+        excluded_symbols = {'CASH', 'TOTAL', 'GRAND TOTAL', 'PORTFOLIO TOTAL', 'ACCOUNT TOTAL', 'NET WORTH', 'BALANCE', 'SUMMARY'}
+        valid_positions = [
+            pos for pos in portfolio.positions 
+            if (pos.symbol.upper() not in excluded_symbols and 
+                pos.market_value is not None and 
+                pos.market_value > 0 and
+                pos.symbol not in ['GENERATED AT JUL 29 2025 07:18 PM ET', ''])
+        ]
+        
+        if not valid_positions:
+            st.warning("No valid positions found for analysis")
+            return
+        
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            # Portfolio allocation table
+            st.markdown("**📋 Holdings Summary**")
+            
+            # Create holdings data
+            holdings_data = []
+            total_value = sum(pos.market_value for pos in valid_positions)
+            
+            for pos in sorted(valid_positions, key=lambda x: x.market_value, reverse=True):
+                allocation = (pos.market_value / total_value) * 100 if total_value > 0 else 0
+                holdings_data.append({
+                    'Symbol': pos.symbol,
+                    'Shares': f"{pos.quantity:,.1f}" if pos.quantity else "0",
+                    'Market Value': f"${pos.market_value:,.2f}",
+                    'Allocation %': f"{allocation:.1f}%",
+                    'Price': f"${pos.current_price:.2f}" if pos.current_price else "-"
+                })
+            
+            holdings_df = pd.DataFrame(holdings_data)
+            st.dataframe(holdings_df, use_container_width=True, height=300)
+            
+            # Portfolio summary metrics
+            st.markdown("**📈 Portfolio Metrics**")
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Total Positions", len(valid_positions))
+            col_b.metric("Total Value", f"${total_value:,.2f}")
+            col_c.metric("Largest Position", f"{max(valid_positions, key=lambda x: x.market_value).symbol}")
+        
+        with col2:
+            # Portfolio allocation pie chart
+            st.markdown("**🥧 Portfolio Allocation**")
+            
+            # Prepare data for pie chart
+            symbols = [pos.symbol for pos in valid_positions]
+            values = [pos.market_value for pos in valid_positions]
+            
+            # Group smaller positions for cleaner visualization
+            if len(valid_positions) > 8:
+                # Show top 7 positions individually, group the rest
+                sorted_positions = sorted(zip(symbols, values), key=lambda x: x[1], reverse=True)
+                top_positions = sorted_positions[:7]
+                other_positions = sorted_positions[7:]
+                
+                display_symbols = [pos[0] for pos in top_positions]
+                display_values = [pos[1] for pos in top_positions]
+                
+                if other_positions:
+                    other_total = sum(pos[1] for pos in other_positions)
+                    display_symbols.append(f"Others ({len(other_positions)})")
+                    display_values.append(other_total)
+            else:
+                display_symbols = symbols
+                display_values = values
+            
+            # Create professional pie chart
+            fig_pie = go.Figure(data=[
+                go.Pie(
+                    labels=display_symbols,
+                    values=display_values,
+                    hole=0.4,  # Donut style
+                    marker=dict(
+                        colors=px.colors.qualitative.Set3[:len(display_symbols)],
+                        line=dict(color='white', width=2)
+                    ),
+                    textinfo='label+percent',
+                    textfont=dict(size=11),
+                    hovertemplate='<b>%{label}</b><br>Value: $%{value:,.2f}<br>Percentage: %{percent}<extra></extra>'
+                )
+            ])
+            
+            fig_pie.update_layout(
+                height=400,
+                showlegend=True,
+                legend=dict(
+                    orientation="v",
+                    yanchor="middle",
+                    y=0.5,
+                    xanchor="left",
+                    x=1.02
+                ),
+                margin=dict(t=20, b=20, l=20, r=80),
+                font=dict(size=10)
+            )
+            
+            st.plotly_chart(fig_pie, use_container_width=True, config={'displayModeBar': False})
+        
+        # Additional insights
+        st.markdown("---")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Concentration analysis
+            top_3_value = sum(sorted([pos.market_value for pos in valid_positions], reverse=True)[:3])
+            concentration = (top_3_value / total_value) * 100 if total_value > 0 else 0
+            st.metric(
+                "Top 3 Concentration", 
+                f"{concentration:.1f}%",
+                help="Percentage of portfolio in top 3 positions"
+            )
+        
+        with col2:
+            # Average position size
+            avg_position = total_value / len(valid_positions) if valid_positions else 0
+            st.metric(
+                "Avg Position Size",
+                f"${avg_position:,.2f}",
+                help="Average market value per position"
+            )
+        
+        with col3:
+            # Smallest vs Largest ratio
+            if valid_positions:
+                largest = max(pos.market_value for pos in valid_positions)
+                smallest = min(pos.market_value for pos in valid_positions)
+                ratio = largest / smallest if smallest > 0 else 0
+                st.metric(
+                    "Size Ratio (L/S)",
+                    f"{ratio:.1f}x",
+                    help="Largest position vs smallest position ratio"
+                )
+        
+        st.info("💡 **Ready for Analysis:** Upload complete! Use the sidebar to configure settings and run momentum analysis.")
 
 
 def main():
