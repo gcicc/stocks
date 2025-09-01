@@ -321,9 +321,33 @@ class PortfolioDashboard:
                     help="Historical data period for momentum calculation"
                 )
                 
+                # Advanced settings
+                with st.expander("🎛️ Advanced Signal Settings", expanded=False):
+                    st.markdown("**Fine-tune signal sensitivity:**")
+                    
+                    confidence_threshold = st.slider(
+                        "Confidence Threshold",
+                        min_value=0.1,
+                        max_value=0.9,
+                        value=0.4,
+                        step=0.05,
+                        help="Minimum confidence required for BUY/SELL signals"
+                    )
+                    
+                    strength_threshold = st.slider(
+                        "Strength Threshold", 
+                        min_value=0.05,
+                        max_value=0.5,
+                        value=0.15,
+                        step=0.05,
+                        help="Minimum momentum strength required for signals"
+                    )
+                    
+                    st.info("💡 **Lower thresholds** = More BUY/SELL signals (higher sensitivity)")
+                
                 # Run analysis button
                 if st.button("🚀 Analyze Portfolio", type="primary"):
-                    self._run_analysis(max_symbols, period)
+                    self._run_analysis(max_symbols, period, confidence_threshold, strength_threshold)
             
             # Status display
             self._render_status_panel()
@@ -350,7 +374,7 @@ class PortfolioDashboard:
             st.error(f"❌ Error parsing portfolio file: {str(e)}")
             logger.error(f"Portfolio parsing error: {str(e)}")
     
-    def _run_analysis(self, max_symbols: int, period: str):
+    def _run_analysis(self, max_symbols: int, period: str, confidence_threshold: float = 0.4, strength_threshold: float = 0.15):
         """Run the complete portfolio analysis."""
         portfolio = st.session_state.portfolio
         if not portfolio:
@@ -410,12 +434,22 @@ class PortfolioDashboard:
             momentum_results = self.momentum_calculator.calculate_portfolio_momentum(market_data)
             st.session_state.momentum_results = momentum_results
             
-            # Stage 3: Generate signals with enhanced status
+            # Stage 3: Generate signals with enhanced status and custom thresholds
             status_text.markdown("🎯 **Generating trading signals** - AI analysis in progress...")
             progress_bar.progress(0.8)
             time.sleep(0.3)
             
-            signals = self.signal_generator.generate_portfolio_signals(
+            # Create signal generator with custom thresholds
+            custom_signal_generator = SignalGenerator(
+                confidence_threshold=confidence_threshold,
+                strength_threshold=strength_threshold
+            )
+            
+            # Store thresholds in session state for debug display
+            st.session_state.confidence_threshold = confidence_threshold
+            st.session_state.strength_threshold = strength_threshold
+            
+            signals = custom_signal_generator.generate_portfolio_signals(
                 momentum_results, market_data
             )
             st.session_state.signals = signals
@@ -429,6 +463,45 @@ class PortfolioDashboard:
             # Show success message with animation
             st.balloons()  # Streamlit celebration animation
             st.success(f"🎉 Analysis complete! Generated signals for {len(signals)} symbols.")
+            
+            # Debug information to understand why all signals are HOLD
+            if all(signal.signal.value == 'HOLD' for signal in signals.values()):
+                with st.expander("🔍 Signal Analysis Debug", expanded=True):
+                    st.warning("**All signals are HOLD - Let's investigate why:**")
+                    
+                    debug_data = []
+                    for symbol, signal in signals.items():
+                        momentum_result = st.session_state.momentum_results[symbol]
+                        debug_data.append({
+                            'Symbol': symbol,
+                            'Current Momentum': f"{momentum_result.current_momentum:.4f}",
+                            'Strength': f"{momentum_result.strength:.3f}",
+                            'Confidence': f"{signal.confidence:.3f}",
+                            'Direction': momentum_result.momentum_direction,
+                            'Reason': signal.reason
+                        })
+                    
+                    debug_df = pd.DataFrame(debug_data)
+                    st.dataframe(debug_df, use_container_width=True)
+                    
+                    # Get thresholds from session state
+                    conf_thresh = st.session_state.get('confidence_threshold', 0.4)
+                    str_thresh = st.session_state.get('strength_threshold', 0.15)
+                    
+                    st.info(f"""
+                    **Current Thresholds:**
+                    - Signal threshold: 0.0 (momentum must cross zero)
+                    - Confidence threshold: {conf_thresh:.0%}
+                    - Strength threshold: {str_thresh:.0%}
+                    
+                    **Possible causes for all HOLD signals:**
+                    - All momentum values near zero (sideways market)
+                    - Low confidence scores (< {conf_thresh:.0%})
+                    - Low momentum strength (< {str_thresh:.0%})
+                    - Inconsistent trend direction
+                    
+                    **💡 Tip:** Try lowering the thresholds in Advanced Settings and re-run analysis.
+                    """)
             
             time.sleep(2)  # Longer pause to show completion
             loading_placeholder.empty()

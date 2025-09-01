@@ -74,7 +74,7 @@ class SignalGenerator:
     def __init__(self, 
                  signal_threshold: float = None,
                  confidence_threshold: float = None,
-                 strength_threshold: float = 0.3):
+                 strength_threshold: float = 0.15):  # Lowered from 0.3 to 0.15
         
         self.signal_threshold = signal_threshold or config.algorithm.signal_threshold
         self.confidence_threshold = confidence_threshold or config.algorithm.confidence_threshold

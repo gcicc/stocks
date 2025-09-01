@@ -44,8 +44,8 @@ class AlgorithmConfig:
     """Natural Momentum algorithm parameters."""
     tema_period: int = 14
     momentum_lookback: int = 20
-    signal_threshold: float = 0.0
-    confidence_threshold: float = 0.6
+    signal_threshold: float = 0.0  # Zero line crossover
+    confidence_threshold: float = 0.4  # Lowered from 0.6 to 0.4 (40%)
 
 
 class Config:
