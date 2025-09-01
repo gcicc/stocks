@@ -48,6 +48,23 @@ class AlgorithmConfig:
     confidence_threshold: float = 0.4  # Lowered from 0.6 to 0.4 (40%)
 
 
+@dataclass
+class BenchmarkConfig:
+    """Benchmark configuration for performance comparison."""
+    risk_free_rate: float = 0.02  # 2% annual risk-free rate
+    market_benchmark: str = "SPY"  # S&P 500 ETF
+    sector_benchmarks: Dict[str, str] = None
+    
+    def __post_init__(self):
+        if self.sector_benchmarks is None:
+            self.sector_benchmarks = {
+                "tech": "QQQ",
+                "finance": "XLF", 
+                "healthcare": "XLV",
+                "energy": "XLE"
+            }
+
+
 class Config:
     """Main configuration class combining all settings."""
     
@@ -56,6 +73,7 @@ class Config:
         self.performance = PerformanceConfig()
         self.ui = UIConfig()
         self.algorithm = AlgorithmConfig()
+        self.benchmarks = BenchmarkConfig()
         
         # Environment-specific overrides
         self._load_environment_overrides()
@@ -83,7 +101,8 @@ class Config:
             "data_sources": self.data_sources.__dict__,
             "performance": self.performance.__dict__,
             "ui": self.ui.__dict__,
-            "algorithm": self.algorithm.__dict__
+            "algorithm": self.algorithm.__dict__,
+            "benchmarks": self.benchmarks.__dict__
         }
 
 
