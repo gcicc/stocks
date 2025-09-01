@@ -33,6 +33,13 @@ class MomentumResult:
     momentum_direction: str  # 'bullish', 'bearish', 'neutral'
     strength: float  # 0.0 to 1.0
     
+    # Multi-timeframe enhancements
+    tema_short: Optional[pd.Series] = None  # Short-term TEMA (5-8 periods)
+    tema_medium: Optional[pd.Series] = None  # Medium-term TEMA (14 periods)
+    tema_long: Optional[pd.Series] = None  # Long-term TEMA (21-34 periods)
+    timeframe_consensus: Optional[float] = None  # -1 to +1, agreement across timeframes
+    trend_strength: Optional[str] = None  # 'weak', 'moderate', 'strong'
+    
     @property
     def latest_signal(self) -> float:
         """Get the latest signal value."""
@@ -52,9 +59,15 @@ class NaturalMomentumCalculator:
     3. Zero-line crossover signals
     """
     
-    def __init__(self, tema_period: int = None, momentum_lookback: int = None):
+    def __init__(self, tema_period: int = None, momentum_lookback: int = None, enable_multi_timeframe: bool = True):
         self.tema_period = tema_period or config.algorithm.tema_period
         self.momentum_lookback = momentum_lookback or config.algorithm.momentum_lookback
+        
+        # Multi-timeframe configuration
+        self.enable_multi_timeframe = enable_multi_timeframe
+        self.tema_short = max(5, self.tema_period // 2)  # Short-term: half of main period
+        self.tema_medium = self.tema_period  # Medium-term: main period (14)
+        self.tema_long = self.tema_period * 2  # Long-term: double main period
         
         # Enable Numba acceleration if available
         self.use_numba = HAS_NUMBA and config.performance.enable_numba_acceleration
@@ -63,6 +76,8 @@ class NaturalMomentumCalculator:
             logger.info("Numba acceleration enabled for momentum calculations")
         else:
             logger.info("Using standard NumPy calculations (Numba not available)")
+        
+        logger.info(f"Multi-timeframe TEMA periods: short={self.tema_short}, medium={self.tema_medium}, long={self.tema_long}")
     
     def calculate_tema(self, prices: Union[pd.Series, np.ndarray], period: int = None) -> np.ndarray:
         """
@@ -148,21 +163,39 @@ class NaturalMomentumCalculator:
             # Step 2: Calculate momentum using log differences
             momentum_raw = self._calculate_log_momentum(log_prices, self.momentum_lookback)
             
-            # Step 3: Apply TEMA smoothing
-            tema_smoothed = self.calculate_tema(momentum_raw, self.tema_period)
+            # Step 3: Apply TEMA smoothing (multi-timeframe)
+            if self.enable_multi_timeframe:
+                tema_short = self.calculate_tema(momentum_raw, self.tema_short)
+                tema_medium = self.calculate_tema(momentum_raw, self.tema_medium)
+                tema_long = self.calculate_tema(momentum_raw, self.tema_long)
+                
+                # Use medium-term TEMA as primary for backward compatibility
+                tema_smoothed = tema_medium
+            else:
+                tema_smoothed = self.calculate_tema(momentum_raw, self.tema_period)
+                tema_short = tema_medium = tema_long = None
             
             # Step 4: Generate signal line (simpler smoothing for crossover detection)
             signal_period = max(3, self.tema_period // 3)  # Faster signal line
             signal_line = self.calculate_tema(tema_smoothed, signal_period)
             
-            # Step 5: Calculate current momentum metrics
+            # Step 5: Calculate multi-timeframe consensus and enhanced metrics
+            if self.enable_multi_timeframe and all(t is not None for t in [tema_short, tema_medium, tema_long]):
+                consensus = self._calculate_timeframe_consensus(tema_short, tema_medium, tema_long)
+                trend_strength = self._calculate_trend_strength(tema_short, tema_medium, tema_long)
+            else:
+                consensus = None
+                trend_strength = None
+            
+            # Step 6: Calculate current momentum metrics (enhanced with consensus)
             current_momentum = tema_smoothed[-1] if len(tema_smoothed) > 0 else 0.0
-            direction = self._determine_direction(tema_smoothed, signal_line)
-            strength = self._calculate_strength(tema_smoothed, signal_line)
+            direction = self._determine_direction_enhanced(tema_smoothed, signal_line, consensus)
+            strength = self._calculate_strength_enhanced(tema_smoothed, signal_line, consensus)
             
             # Create pandas Series with proper index
             index = prices.index
             
+            # Create result with multi-timeframe data
             return MomentumResult(
                 symbol=market_data.symbol,
                 momentum_values=pd.Series(momentum_raw, index=index[-len(momentum_raw):]),
@@ -170,7 +203,13 @@ class NaturalMomentumCalculator:
                 signal_line=pd.Series(signal_line, index=index[-len(signal_line):]),
                 current_momentum=float(current_momentum),
                 momentum_direction=direction,
-                strength=float(strength)
+                strength=float(strength),
+                # Multi-timeframe enhancements
+                tema_short=pd.Series(tema_short, index=index[-len(tema_short):]) if tema_short is not None else None,
+                tema_medium=pd.Series(tema_medium, index=index[-len(tema_medium):]) if tema_medium is not None else None,
+                tema_long=pd.Series(tema_long, index=index[-len(tema_long):]) if tema_long is not None else None,
+                timeframe_consensus=consensus,
+                trend_strength=trend_strength
             )
             
         except Exception as e:
@@ -227,6 +266,92 @@ class NaturalMomentumCalculator:
         strength = min(1.0, distance / (2 * volatility))
         return strength
     
+    def _calculate_timeframe_consensus(self, tema_short: np.ndarray, tema_medium: np.ndarray, tema_long: np.ndarray) -> float:
+        """Calculate consensus across multiple timeframes (-1 to +1).
+        
+        Returns:
+            -1.0: All timeframes bearish
+            0.0: Mixed signals
+            +1.0: All timeframes bullish
+        """
+        if len(tema_short) < 2 or len(tema_medium) < 2 or len(tema_long) < 2:
+            return 0.0
+        
+        # Check direction for each timeframe (positive = uptrend, negative = downtrend)
+        short_direction = 1 if tema_short[-1] > tema_short[-2] else -1
+        medium_direction = 1 if tema_medium[-1] > tema_medium[-2] else -1
+        long_direction = 1 if tema_long[-1] > tema_long[-2] else -1
+        
+        # Check zero-line position for each timeframe
+        short_position = 1 if tema_short[-1] > 0 else -1
+        medium_position = 1 if tema_medium[-1] > 0 else -1
+        long_position = 1 if tema_long[-1] > 0 else -1
+        
+        # Calculate weighted consensus (direction + position)
+        direction_consensus = (short_direction + medium_direction + long_direction) / 3.0
+        position_consensus = (short_position + medium_position + long_position) / 3.0
+        
+        # Combine direction and position (50/50 weighting)
+        total_consensus = (direction_consensus + position_consensus) / 2.0
+        
+        return float(np.clip(total_consensus, -1.0, 1.0))
+    
+    def _calculate_trend_strength(self, tema_short: np.ndarray, tema_medium: np.ndarray, tema_long: np.ndarray) -> str:
+        """Calculate overall trend strength based on timeframe alignment.
+        
+        Returns:
+            'weak': Conflicting signals across timeframes
+            'moderate': Some alignment but mixed signals
+            'strong': Strong alignment across all timeframes
+        """
+        consensus = self._calculate_timeframe_consensus(tema_short, tema_medium, tema_long)
+        
+        if abs(consensus) >= 0.8:
+            return 'strong'
+        elif abs(consensus) >= 0.4:
+            return 'moderate'
+        else:
+            return 'weak'
+    
+    def _determine_direction_enhanced(self, tema_values: np.ndarray, signal_values: np.ndarray, consensus: Optional[float]) -> str:
+        """Enhanced direction determination using multi-timeframe consensus."""
+        # Start with basic direction logic
+        basic_direction = self._determine_direction(tema_values, signal_values)
+        
+        # If no consensus available, return basic direction
+        if consensus is None:
+            return basic_direction
+        
+        # Use consensus to refine direction
+        if consensus > 0.5:
+            return 'bullish'
+        elif consensus < -0.5:
+            return 'bearish'
+        elif abs(consensus) < 0.2:
+            return 'neutral'
+        else:
+            # Moderate consensus - stick with basic direction but add nuance
+            if basic_direction == 'neutral':
+                return 'bullish' if consensus > 0 else 'bearish'
+            return basic_direction
+    
+    def _calculate_strength_enhanced(self, tema_values: np.ndarray, signal_values: np.ndarray, consensus: Optional[float]) -> float:
+        """Enhanced strength calculation using multi-timeframe consensus."""
+        # Start with basic strength calculation
+        basic_strength = self._calculate_strength(tema_values, signal_values)
+        
+        # If no consensus available, return basic strength
+        if consensus is None:
+            return basic_strength
+        
+        # Enhance strength with consensus factor
+        consensus_factor = abs(consensus)  # 0 to 1
+        
+        # Weighted combination: 70% basic strength + 30% consensus
+        enhanced_strength = (0.7 * basic_strength) + (0.3 * consensus_factor)
+        
+        return min(1.0, enhanced_strength)
+    
     def _create_empty_result(self, symbol: str) -> MomentumResult:
         """Create empty result for symbols with insufficient data."""
         empty_series = pd.Series([], dtype=float)
@@ -238,7 +363,13 @@ class NaturalMomentumCalculator:
             signal_line=empty_series,
             current_momentum=0.0,
             momentum_direction='neutral',
-            strength=0.0
+            strength=0.0,
+            # Multi-timeframe fields for empty result
+            tema_short=None,
+            tema_medium=None,
+            tema_long=None,
+            timeframe_consensus=None,
+            trend_strength=None
         )
     
     def calculate_portfolio_momentum(self, portfolio_data: Dict[str, MarketData]) -> Dict[str, MomentumResult]:

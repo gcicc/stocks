@@ -3,7 +3,12 @@
     "allow": [
       "Bash(streamlit run:*)",
       "Bash(git add:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)",
+      "Bash(python test:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
