@@ -366,9 +366,13 @@ class PortfolioDashboard:
                 
                 st.success(f"✅ Parsed {len(portfolio.positions)} positions from {filename}")
                 
-                # Show portfolio distribution graphics immediately after upload
+                # Show quick preview
                 if len(portfolio.positions) > 0:
-                    self._render_portfolio_distribution(portfolio)
+                    symbols_preview = ", ".join(portfolio.symbols[:5])
+                    if len(portfolio.symbols) > 5:
+                        symbols_preview += f" ... (+{len(portfolio.symbols)-5} more)"
+                    st.info(f"**Symbols found:** {symbols_preview}")
+                    st.info("📊 **Portfolio overview available in main panel** → Click 'Portfolio Overview' tab")
                 
         except Exception as e:
             st.error(f"❌ Error parsing portfolio file: {str(e)}")
@@ -688,9 +692,14 @@ class PortfolioDashboard:
     
     def _render_main_content(self):
         """Render the main content area."""
-        if not st.session_state.analysis_complete:
+        if st.session_state.portfolio is None:
+            # No portfolio uploaded yet - show welcome screen
             self._render_welcome_screen()
+        elif not st.session_state.analysis_complete:
+            # Portfolio uploaded but analysis not complete - show portfolio overview
+            self._render_portfolio_tabs()
         else:
+            # Analysis complete - show full results with portfolio overview
             self._render_analysis_results()
         
         # Add professional footer
@@ -818,23 +827,72 @@ class PortfolioDashboard:
                 </div>
                 """, unsafe_allow_html=True)
     
+    def _render_portfolio_tabs(self):
+        """Render portfolio tabs when portfolio is loaded but analysis not complete."""
+        st.header("📊 Portfolio Intelligence Platform")
+        
+        # Create tabs - Portfolio Overview will be the main focus
+        tab1, tab2 = st.tabs(["📊 Portfolio Overview", "🚀 Ready for Analysis"])
+        
+        with tab1:
+            if st.session_state.portfolio:
+                self._render_portfolio_distribution(st.session_state.portfolio)
+        
+        with tab2:
+            st.markdown("""
+            <div style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 2rem;
+                border-radius: 15px;
+                text-align: center;
+                margin: 2rem 0;
+            ">
+                <h2 style="margin: 0; font-size: 2rem;">🚀 Ready for Momentum Analysis</h2>
+                <p style="margin: 1rem 0; opacity: 0.9; font-size: 1.1rem;">
+                    Your portfolio has been successfully loaded and analyzed. 
+                    Configure your analysis settings in the sidebar and click "Analyze Portfolio" to generate trading signals.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Show portfolio summary
+            portfolio = st.session_state.portfolio
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Total Positions", len([p for p in portfolio.positions if p.symbol.upper() not in {'CASH', 'TOTAL', 'GRAND TOTAL'}]))
+            
+            with col2:
+                if portfolio.total_market_value:
+                    st.metric("Portfolio Value", f"${portfolio.total_market_value:,.2f}")
+            
+            with col3:
+                st.metric("Symbols Ready", len(portfolio.symbols))
+            
+            st.info("💡 **Next Step:** Use the sidebar to configure analysis settings, then click 'Analyze Portfolio' to generate momentum-based trading signals.")
+    
     def _render_analysis_results(self):
         """Render analysis results with charts and tables."""
         st.header("📊 Analysis Results")
         
-        # Create tabs for different views
-        tab1, tab2, tab3, tab4 = st.tabs(["📋 Signals Overview", "📈 Charts", "🎯 Detailed Analysis", "📤 Export"])
+        # Create tabs for different views - Portfolio Overview first, then results
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Portfolio Overview", "📋 Signals Overview", "📈 Charts", "🎯 Detailed Analysis", "📤 Export"])
         
         with tab1:
-            self._render_signals_overview()
+            if st.session_state.portfolio:
+                self._render_portfolio_distribution(st.session_state.portfolio)
         
         with tab2:
-            self._render_charts()
+            self._render_signals_overview()
         
         with tab3:
-            self._render_detailed_analysis()
+            self._render_charts()
         
         with tab4:
+            self._render_detailed_analysis()
+        
+        with tab5:
             self._render_export_section()
     
     def _render_signals_overview(self):
