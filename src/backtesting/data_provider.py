@@ -121,6 +121,10 @@ class DataProvider:
                 # Standardize column names
                 df = self._standardize_dataframe(df)
                 
+                # Convert timezone-aware index to naive
+                if hasattr(df.index, 'tz') and df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
+                
                 # Validate data quality
                 if self._validate_data_quality(df, symbol):
                     data[symbol] = df
@@ -196,6 +200,10 @@ class DataProvider:
                 df = self._parse_alphavantage_response(json_data, symbol)
                 
                 if df is not None and not df.empty:
+                    # Convert timezone-aware index to naive
+                    if hasattr(df.index, 'tz') and df.index.tz is not None:
+                        df.index = df.index.tz_localize(None)
+                    
                     # Filter date range
                     df = df[(df.index >= request.start_date) & (df.index <= request.end_date)]
                     
@@ -281,6 +289,10 @@ class DataProvider:
                 # Standardize columns
                 df = self._standardize_dataframe(df)
                 
+                # Convert timezone-aware index to naive
+                if hasattr(df.index, 'tz') and df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
+                
                 # Filter date range
                 df = df[(df.index >= request.start_date) & (df.index <= request.end_date)]
                 
@@ -322,6 +334,10 @@ class DataProvider:
             df = pd.DataFrame.from_dict(time_series, orient='index', dtype=float)
             df.index = pd.to_datetime(df.index)
             df.sort_index(inplace=True)
+            
+            # Ensure timezone-naive
+            if hasattr(df.index, 'tz') and df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
             
             # Rename columns (Alpha Vantage uses numbered keys)
             column_mapping = {
