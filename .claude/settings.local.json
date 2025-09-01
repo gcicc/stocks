@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(streamlit run:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git merge:*)"
     ],
     "deny": [],
     "ask": []
