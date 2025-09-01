@@ -276,6 +276,32 @@ class PortfolioDashboard:
             if uploaded_file is not None:
                 self._handle_file_upload(uploaded_file)
             
+            # Watchlist stocks input (always available)
+            st.header("📈 Watchlist Stocks")
+            
+            watchlist_input = st.text_area(
+                "Additional stocks to analyze",
+                placeholder="GSK, ABBV, MSFT, AAPL",
+                help="Enter stock symbols separated by commas. These will be included in momentum analysis as investment opportunities.",
+                height=80
+            )
+            
+            # Parse and validate watchlist symbols
+            watchlist_symbols = []
+            if watchlist_input.strip():
+                symbols = [s.strip().upper() for s in watchlist_input.split(',')]
+                watchlist_symbols = [s for s in symbols if s and len(s) >= 1 and len(s) <= 6]
+                
+                if watchlist_symbols:
+                    st.success(f"📊 {len(watchlist_symbols)} watchlist symbols: {', '.join(watchlist_symbols)}")
+                else:
+                    st.warning("⚠️ Please enter valid stock symbols separated by commas")
+            
+            # Store watchlist in session state
+            st.session_state.watchlist_symbols = watchlist_symbols
+            
+            st.divider()
+
             # Analysis controls
             if st.session_state.portfolio is not None:
                 st.header("⚙️ Analysis Settings")
@@ -385,8 +411,17 @@ class PortfolioDashboard:
             st.error("No portfolio loaded")
             return
         
-        # Limit symbols for performance
-        symbols_to_analyze = portfolio.symbols[:max_symbols]
+        # Combine portfolio symbols with watchlist symbols
+        portfolio_symbols = portfolio.symbols[:max_symbols]
+        watchlist_symbols = st.session_state.get('watchlist_symbols', [])
+        
+        # Combine and deduplicate symbols
+        all_symbols = list(set(portfolio_symbols + watchlist_symbols))
+        symbols_to_analyze = all_symbols[:max_symbols]  # Still respect the max limit
+        
+        portfolio_symbol_count = len(portfolio_symbols)
+        watchlist_count = len(watchlist_symbols)
+        total_unique_count = len(symbols_to_analyze)
         
         # Enhanced progress tracking with animations
         st.session_state.analysis_in_progress = True
@@ -417,7 +452,7 @@ class PortfolioDashboard:
         
         try:
             # Stage 1: Fetch market data with enhanced status
-            status_text.markdown("📡 **Fetching market data** - Connecting to financial APIs...")
+            status_text.markdown(f"📡 **Fetching market data** - Analyzing {portfolio_symbol_count} portfolio + {watchlist_count} watchlist symbols...")
             progress_bar.progress(0.2)
             time.sleep(0.5)  # Brief pause for visual effect
             
@@ -466,7 +501,15 @@ class PortfolioDashboard:
             
             # Show success message with animation
             st.balloons()  # Streamlit celebration animation
-            st.success(f"🎉 Analysis complete! Generated signals for {len(signals)} symbols.")
+            
+            # Create detailed success message
+            portfolio_signals = len([s for sym, s in signals.items() if sym in portfolio.symbols])
+            watchlist_signals = len(signals) - portfolio_signals
+            
+            if watchlist_count > 0:
+                st.success(f"🎉 Analysis complete! Generated signals for {len(signals)} symbols ({portfolio_signals} portfolio + {watchlist_signals} watchlist).")
+            else:
+                st.success(f"🎉 Analysis complete! Generated signals for {len(signals)} portfolio symbols.")
             
             # Debug information to understand why all signals are HOLD
             if all(signal.signal.value == 'HOLD' for signal in signals.values()):
@@ -589,6 +632,24 @@ class PortfolioDashboard:
             </div>
             """, unsafe_allow_html=True)
         
+        # Show watchlist status
+        watchlist_symbols = st.session_state.get('watchlist_symbols', [])
+        if watchlist_symbols:
+            st.markdown("""
+            <div style="
+                background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+                color: white;
+                padding: 0.75rem;
+                border-radius: 8px;
+                margin: 0.5rem 0;
+                text-align: center;
+            ">
+                <div style="font-size: 1rem; margin-bottom: 0.25rem;">👁️</div>
+                <div style="font-weight: bold;">Watchlist Active</div>
+                <div style="font-size: 0.9rem; opacity: 0.9;">{} symbols added</div>
+            </div>
+            """.format(len(watchlist_symbols)), unsafe_allow_html=True)
+
         # Enhanced analysis status
         if st.session_state.analysis_complete:
             signals = st.session_state.signals or {}
@@ -902,15 +963,22 @@ class PortfolioDashboard:
             st.warning("No signals available")
             return
         
-        # Create enhanced signals dataframe with badges
+        # Create enhanced signals dataframe with badges and source identification
         signals_data = []
+        portfolio = st.session_state.portfolio
+        watchlist_symbols = st.session_state.get('watchlist_symbols', [])
+        
         for symbol, signal in signals.items():
             # Create signal badge HTML
             signal_class = f"signal-badge-{signal.signal.value.lower()}"
             signal_badge = f'<div class="{signal_class}">{signal.signal.value}</div>'
             
+            # Determine if this is a portfolio or watchlist symbol
+            source = "📊 Portfolio" if symbol in portfolio.symbols else "👁️ Watchlist"
+            
             signals_data.append({
                 'Symbol': symbol,
+                'Source': source,
                 'Signal': signal_badge,
                 'Confidence': f"{signal.confidence:.0%}",
                 'Strength': f"{signal.strength:.0%}",
@@ -935,6 +1003,12 @@ class PortfolioDashboard:
                     df_clean.at[i, 'Signal'] = 'SELL'
                 else:
                     df_clean.at[i, 'Signal'] = 'HOLD'
+        
+        # Sort by Source (Portfolio first) then by Signal priority
+        signal_priority = {'BUY': 1, 'SELL': 2, 'HOLD': 3}
+        df_clean['signal_priority'] = df_clean['Signal'].map(signal_priority)
+        df_clean['source_priority'] = df_clean['Source'].map({'📊 Portfolio': 1, '👁️ Watchlist': 2})
+        df_clean = df_clean.sort_values(['source_priority', 'signal_priority']).drop(['signal_priority', 'source_priority'], axis=1)
         
         # Color coding function for signals
         def color_signal_cells(val):
