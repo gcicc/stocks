@@ -79,7 +79,9 @@ class SignalGenerator:
                  volatility_multiplier: float = 2.0,
                  enable_signal_confirmation: bool = True,
                  confirmation_periods: int = 3,
-                 min_confirmations: int = 2):
+                 min_confirmations: int = 2,
+                 enable_divergence_detection: bool = True,
+                 divergence_lookback: int = 10):
         
         self.base_signal_threshold = signal_threshold or config.algorithm.signal_threshold
         self.confidence_threshold = confidence_threshold or config.algorithm.confidence_threshold
@@ -94,11 +96,17 @@ class SignalGenerator:
         self.confirmation_periods = confirmation_periods  # Look back N periods for confirmation
         self.min_confirmations = min_confirmations  # Minimum confirmations required
         
+        # Divergence detection configuration
+        self.enable_divergence_detection = enable_divergence_detection
+        self.divergence_lookback = divergence_lookback  # Periods to analyze for divergences
+        
         logger.info(f"Signal generator initialized with thresholds: "
                    f"base_signal={self.base_signal_threshold}, confidence={self.confidence_threshold}")
         logger.info(f"Adaptive thresholds: {'enabled' if enable_adaptive_thresholds else 'disabled'}")
         logger.info(f"Signal confirmation: {'enabled' if enable_signal_confirmation else 'disabled'} "
                    f"(periods={confirmation_periods}, min={min_confirmations})")
+        logger.info(f"Divergence detection: {'enabled' if enable_divergence_detection else 'disabled'} "
+                   f"(lookback={divergence_lookback})")
     
     def generate_signal(self, 
                        momentum_result: MomentumResult, 
@@ -163,10 +171,23 @@ class SignalGenerator:
                 momentum_result
             )
             
-            # Determine risk level
-            risk_level = self._assess_risk_level(momentum_result, market_data)
+            # Detect momentum divergences if enabled
+            divergence_info = None
+            if self.enable_divergence_detection:
+                divergence_info = self._detect_momentum_divergence(
+                    momentum_result, market_data
+                )
+                
+                # Adjust signal based on divergence
+                if divergence_info:
+                    final_signal = self._apply_divergence_adjustment(
+                        final_signal, divergence_info
+                    )
             
-            # Create explanation with adaptive threshold and confirmation info
+            # Determine risk level (consider divergence)
+            risk_level = self._assess_risk_level(momentum_result, market_data, divergence_info)
+            
+            # Create explanation with all enhancement info
             if self.enable_signal_confirmation and base_signal != SignalType.HOLD:
                 if confirmed_signal == base_signal:
                     confirmation_info = "confirmed"
@@ -177,7 +198,7 @@ class SignalGenerator:
             else:
                 confirmation_info = None
             reason = self._generate_signal_reason(
-                final_signal, current_momentum, direction, confidence, adaptive_threshold, confirmation_info
+                final_signal, current_momentum, direction, confidence, adaptive_threshold, confirmation_info, divergence_info
             )
             
             return TradingSignal(
@@ -463,6 +484,195 @@ class SignalGenerator:
             logger.debug(f"Price-momentum alignment check failed: {str(e)}")
             return True  # Don't penalize if check fails
     
+    def _detect_momentum_divergence(self, momentum_result: MomentumResult, 
+                                   market_data: MarketData) -> Optional[dict]:
+        """Detect momentum divergences that may signal trend reversals.
+        
+        Types of divergences:
+        - Bullish divergence: Price makes lower lows, momentum makes higher lows
+        - Bearish divergence: Price makes higher highs, momentum makes lower highs
+        
+        Args:
+            momentum_result: Momentum calculation results
+            market_data: Market data with price information
+            
+        Returns:
+            Dictionary with divergence info or None if no divergence detected
+        """
+        try:
+            if len(market_data.prices) < self.divergence_lookback:
+                return None
+            
+            # Get recent price and momentum data
+            recent_prices = market_data.prices['Close'].iloc[-self.divergence_lookback:]
+            recent_momentum = momentum_result.tema_values.iloc[-self.divergence_lookback:] if len(momentum_result.tema_values) >= self.divergence_lookback else None
+            
+            if recent_momentum is None:
+                return None
+            
+            # Find peaks and troughs in both price and momentum
+            price_peaks = self._find_peaks_and_troughs(recent_prices.values)
+            momentum_peaks = self._find_peaks_and_troughs(recent_momentum.values)
+            
+            # Analyze for divergences
+            bullish_div = self._check_bullish_divergence(price_peaks, momentum_peaks)
+            bearish_div = self._check_bearish_divergence(price_peaks, momentum_peaks)
+            
+            if bullish_div:
+                strength = self._calculate_divergence_strength(bullish_div)
+                logger.debug(f"Bullish divergence detected: strength={strength}")
+                return {
+                    'type': 'bullish',
+                    'strength': strength,
+                    'price_points': bullish_div['price_points'],
+                    'momentum_points': bullish_div['momentum_points']
+                }
+            elif bearish_div:
+                strength = self._calculate_divergence_strength(bearish_div)
+                logger.debug(f"Bearish divergence detected: strength={strength}")
+                return {
+                    'type': 'bearish',
+                    'strength': strength,
+                    'price_points': bearish_div['price_points'],
+                    'momentum_points': bearish_div['momentum_points']
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Error in divergence detection: {str(e)}")
+            return None
+    
+    def _find_peaks_and_troughs(self, data: np.ndarray) -> dict:
+        """Find peaks and troughs in a data series.
+        
+        Args:
+            data: Array of values
+            
+        Returns:
+            Dictionary with peaks and troughs information
+        """
+        if len(data) < 5:
+            return {'peaks': [], 'troughs': []}
+        
+        peaks = []
+        troughs = []
+        
+        # Simple peak/trough detection (local maxima/minima)
+        for i in range(2, len(data) - 2):
+            # Check for peak (local maximum)
+            if (data[i] > data[i-1] and data[i] > data[i+1] and
+                data[i] > data[i-2] and data[i] > data[i+2]):
+                peaks.append({'index': i, 'value': data[i]})
+            
+            # Check for trough (local minimum)
+            elif (data[i] < data[i-1] and data[i] < data[i+1] and
+                  data[i] < data[i-2] and data[i] < data[i+2]):
+                troughs.append({'index': i, 'value': data[i]})
+        
+        return {'peaks': peaks, 'troughs': troughs}
+    
+    def _check_bullish_divergence(self, price_peaks: dict, momentum_peaks: dict) -> Optional[dict]:
+        """Check for bullish divergence (price lower lows, momentum higher lows)."""
+        price_troughs = price_peaks['troughs']
+        momentum_troughs = momentum_peaks['troughs']
+        
+        if len(price_troughs) < 2 or len(momentum_troughs) < 2:
+            return None
+        
+        # Get the two most recent troughs
+        recent_price_troughs = sorted(price_troughs, key=lambda x: x['index'])[-2:]
+        recent_momentum_troughs = sorted(momentum_troughs, key=lambda x: x['index'])[-2:]
+        
+        if len(recent_price_troughs) < 2 or len(recent_momentum_troughs) < 2:
+            return None
+        
+        # Check for bullish divergence pattern
+        price_lower_low = recent_price_troughs[1]['value'] < recent_price_troughs[0]['value']
+        momentum_higher_low = recent_momentum_troughs[1]['value'] > recent_momentum_troughs[0]['value']
+        
+        if price_lower_low and momentum_higher_low:
+            return {
+                'price_points': recent_price_troughs,
+                'momentum_points': recent_momentum_troughs
+            }
+        
+        return None
+    
+    def _check_bearish_divergence(self, price_peaks: dict, momentum_peaks: dict) -> Optional[dict]:
+        """Check for bearish divergence (price higher highs, momentum lower highs)."""
+        price_peaks_list = price_peaks['peaks']
+        momentum_peaks_list = momentum_peaks['peaks']
+        
+        if len(price_peaks_list) < 2 or len(momentum_peaks_list) < 2:
+            return None
+        
+        # Get the two most recent peaks
+        recent_price_peaks = sorted(price_peaks_list, key=lambda x: x['index'])[-2:]
+        recent_momentum_peaks = sorted(momentum_peaks_list, key=lambda x: x['index'])[-2:]
+        
+        if len(recent_price_peaks) < 2 or len(recent_momentum_peaks) < 2:
+            return None
+        
+        # Check for bearish divergence pattern
+        price_higher_high = recent_price_peaks[1]['value'] > recent_price_peaks[0]['value']
+        momentum_lower_high = recent_momentum_peaks[1]['value'] < recent_momentum_peaks[0]['value']
+        
+        if price_higher_high and momentum_lower_high:
+            return {
+                'price_points': recent_price_peaks,
+                'momentum_points': recent_momentum_peaks
+            }
+        
+        return None
+    
+    def _calculate_divergence_strength(self, divergence_data: dict) -> str:
+        """Calculate the strength of a divergence."""
+        try:
+            price_points = divergence_data['price_points']
+            momentum_points = divergence_data['momentum_points']
+            
+            if len(price_points) < 2 or len(momentum_points) < 2:
+                return 'weak'
+            
+            # Calculate the magnitude of price vs momentum changes
+            price_change = abs(price_points[1]['value'] - price_points[0]['value']) / price_points[0]['value']
+            momentum_change = abs(momentum_points[1]['value'] - momentum_points[0]['value'])
+            
+            # Strong divergence: significant price change with opposite momentum change
+            if price_change > 0.05 and momentum_change > 0.5:  # 5% price change, significant momentum change
+                return 'strong'
+            elif price_change > 0.02 or momentum_change > 0.2:
+                return 'moderate'
+            else:
+                return 'weak'
+                
+        except Exception:
+            return 'weak'
+    
+    def _apply_divergence_adjustment(self, signal: SignalType, divergence_info: dict) -> SignalType:
+        """Adjust signal based on detected divergence."""
+        divergence_type = divergence_info.get('type')
+        divergence_strength = divergence_info.get('strength')
+        
+        # Only apply strong adjustments for strong divergences
+        if divergence_strength != 'strong':
+            return signal
+        
+        # Strong bullish divergence suggests upward reversal
+        if divergence_type == 'bullish':
+            if signal == SignalType.SELL:
+                logger.debug("Strong bullish divergence - downgrading SELL to HOLD")
+                return SignalType.HOLD
+        
+        # Strong bearish divergence suggests downward reversal
+        elif divergence_type == 'bearish':
+            if signal == SignalType.BUY:
+                logger.debug("Strong bearish divergence - downgrading BUY to HOLD")
+                return SignalType.HOLD
+        
+        return signal
+    
     def _calculate_confidence(self, 
                             momentum_result: MomentumResult, 
                             market_data: MarketData) -> float:
@@ -589,7 +799,8 @@ class SignalGenerator:
     
     def _assess_risk_level(self, 
                           momentum_result: MomentumResult, 
-                          market_data: MarketData) -> str:
+                          market_data: MarketData,
+                          divergence_info: Optional[dict] = None) -> str:
         """Assess risk level for the trade."""
         
         risk_factors = []
@@ -604,6 +815,19 @@ class SignalGenerator:
             volatility = np.std(np.diff(recent_prices) / recent_prices[:-1])
             volatility_risk = min(1.0, volatility * 10)  # Scale volatility
             risk_factors.append(volatility_risk)
+        
+        # Factor 3: Divergence risk (if detected)
+        if divergence_info:
+            divergence_type = divergence_info.get('type')
+            divergence_strength = divergence_info.get('strength')
+            
+            # Divergences increase uncertainty and risk
+            if divergence_strength == 'strong':
+                risk_factors.append(0.8)  # High risk for strong divergences
+            elif divergence_strength == 'moderate':
+                risk_factors.append(0.6)  # Medium risk for moderate divergences
+            else:
+                risk_factors.append(0.4)  # Low additional risk for weak divergences
         
         # Calculate overall risk score
         avg_risk = np.mean(risk_factors)
@@ -621,7 +845,8 @@ class SignalGenerator:
                                direction: str,
                                confidence: float,
                                threshold: float = None,
-                               confirmation_info: str = None) -> str:
+                               confirmation_info: str = None,
+                               divergence_info: dict = None) -> str:
         """Generate human-readable explanation for the signal with all enhancement info."""
         
         threshold_info = ""
@@ -634,18 +859,25 @@ class SignalGenerator:
         if confirmation_info:
             confirmation_text = f" - {confirmation_info}"
         
+        divergence_text = ""
+        if divergence_info:
+            div_type = divergence_info.get('type', '')
+            div_strength = divergence_info.get('strength', '')
+            if div_type:
+                divergence_text = f" - {div_strength} {div_type} divergence detected"
+        
         if signal == SignalType.BUY:
             return (f"Bullish momentum ({momentum:.3f}) with {direction} trend. "
-                   f"Confidence: {confidence:.0%}{threshold_info}{confirmation_text}")
+                   f"Confidence: {confidence:.0%}{threshold_info}{confirmation_text}{divergence_text}")
         elif signal == SignalType.SELL:
             return (f"Bearish momentum ({momentum:.3f}) with {direction} trend. "
-                   f"Confidence: {confidence:.0%}{threshold_info}{confirmation_text}")
+                   f"Confidence: {confidence:.0%}{threshold_info}{confirmation_text}{divergence_text}")
         else:
             reason_base = f"Neutral momentum ({momentum:.3f}) or low confidence ({confidence:.0%}). Hold current position"
             if confirmation_info == "downgraded":
-                return f"{reason_base} (signal downgraded due to insufficient confirmation){threshold_info}."
+                return f"{reason_base} (signal downgraded due to insufficient confirmation){threshold_info}{divergence_text}."
             else:
-                return f"{reason_base}{threshold_info}."
+                return f"{reason_base}{threshold_info}{divergence_text}."
     
     def _create_hold_signal(self, symbol: str, reason: str) -> TradingSignal:
         """Create a HOLD signal with explanation."""
