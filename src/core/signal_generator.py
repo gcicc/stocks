@@ -76,7 +76,10 @@ class SignalGenerator:
                  confidence_threshold: float = None,
                  strength_threshold: float = 0.15,  # Lowered from 0.3 to 0.15
                  enable_adaptive_thresholds: bool = True,
-                 volatility_multiplier: float = 2.0):
+                 volatility_multiplier: float = 2.0,
+                 enable_signal_confirmation: bool = True,
+                 confirmation_periods: int = 3,
+                 min_confirmations: int = 2):
         
         self.base_signal_threshold = signal_threshold or config.algorithm.signal_threshold
         self.confidence_threshold = confidence_threshold or config.algorithm.confidence_threshold
@@ -86,9 +89,16 @@ class SignalGenerator:
         self.enable_adaptive_thresholds = enable_adaptive_thresholds
         self.volatility_multiplier = volatility_multiplier  # How much volatility affects thresholds
         
+        # Signal confirmation configuration
+        self.enable_signal_confirmation = enable_signal_confirmation
+        self.confirmation_periods = confirmation_periods  # Look back N periods for confirmation
+        self.min_confirmations = min_confirmations  # Minimum confirmations required
+        
         logger.info(f"Signal generator initialized with thresholds: "
                    f"base_signal={self.base_signal_threshold}, confidence={self.confidence_threshold}")
         logger.info(f"Adaptive thresholds: {'enabled' if enable_adaptive_thresholds else 'disabled'}")
+        logger.info(f"Signal confirmation: {'enabled' if enable_signal_confirmation else 'disabled'} "
+                   f"(periods={confirmation_periods}, min={min_confirmations})")
     
     def generate_signal(self, 
                        momentum_result: MomentumResult, 
@@ -133,9 +143,17 @@ class SignalGenerator:
                 adaptive_threshold
             )
             
+            # Apply signal confirmation if enabled
+            if self.enable_signal_confirmation:
+                confirmed_signal = self._apply_signal_confirmation(
+                    base_signal, momentum_result, market_data, adaptive_threshold
+                )
+            else:
+                confirmed_signal = base_signal
+            
             # Apply filters and confidence checks
             final_signal = self._apply_signal_filters(
-                base_signal, confidence, momentum_strength, direction
+                confirmed_signal, confidence, momentum_strength, direction
             )
             
             # Calculate price targets and risk metrics
@@ -148,9 +166,18 @@ class SignalGenerator:
             # Determine risk level
             risk_level = self._assess_risk_level(momentum_result, market_data)
             
-            # Create explanation with adaptive threshold info
+            # Create explanation with adaptive threshold and confirmation info
+            if self.enable_signal_confirmation and base_signal != SignalType.HOLD:
+                if confirmed_signal == base_signal:
+                    confirmation_info = "confirmed"
+                elif confirmed_signal == SignalType.HOLD:
+                    confirmation_info = "downgraded"
+                else:
+                    confirmation_info = None
+            else:
+                confirmation_info = None
             reason = self._generate_signal_reason(
-                final_signal, current_momentum, direction, confidence, adaptive_threshold
+                final_signal, current_momentum, direction, confidence, adaptive_threshold, confirmation_info
             )
             
             return TradingSignal(
@@ -271,6 +298,170 @@ class SignalGenerator:
         except Exception as e:
             logger.warning(f"Error calculating adaptive threshold: {str(e)}")
             return self.base_signal_threshold  # Fallback to base threshold
+    
+    def _apply_signal_confirmation(self, 
+                                 base_signal: SignalType,
+                                 momentum_result: MomentumResult, 
+                                 market_data: MarketData,
+                                 threshold: float) -> SignalType:
+        """Apply signal confirmation logic using multiple validation factors.
+        
+        Confirmation factors:
+        1. Consecutive momentum direction consistency
+        2. Multi-timeframe agreement (if available)
+        3. Volume confirmation
+        4. Price-momentum alignment
+        
+        Args:
+            base_signal: Initial signal from momentum crossover
+            momentum_result: Momentum calculation results  
+            market_data: Market data for additional validation
+            threshold: Current adaptive threshold
+            
+        Returns:
+            Confirmed or downgraded signal
+        """
+        try:
+            if base_signal == SignalType.HOLD:
+                return base_signal  # No confirmation needed for HOLD
+            
+            confirmation_score = 0
+            max_confirmations = 4  # Number of confirmation factors
+            
+            # Factor 1: Consecutive momentum direction consistency
+            momentum_consistency = self._check_momentum_consistency(
+                momentum_result.tema_values, base_signal
+            )
+            if momentum_consistency:
+                confirmation_score += 1
+                logger.debug(f"Confirmation +1: Momentum consistency")
+            
+            # Factor 2: Multi-timeframe agreement (if available)
+            timeframe_agreement = self._check_timeframe_agreement(
+                momentum_result, base_signal
+            )
+            if timeframe_agreement:
+                confirmation_score += 1
+                logger.debug(f"Confirmation +1: Timeframe agreement")
+            
+            # Factor 3: Volume confirmation
+            volume_confirmation = self._check_volume_confirmation(
+                market_data, base_signal
+            )
+            if volume_confirmation:
+                confirmation_score += 1
+                logger.debug(f"Confirmation +1: Volume confirmation")
+            
+            # Factor 4: Price-momentum alignment
+            alignment_confirmation = self._check_price_momentum_alignment(
+                momentum_result, market_data, base_signal
+            )
+            if alignment_confirmation:
+                confirmation_score += 1
+                logger.debug(f"Confirmation +1: Price-momentum alignment")
+            
+            # Determine final signal based on confirmation score
+            confirmation_ratio = confirmation_score / max_confirmations
+            min_ratio = self.min_confirmations / max_confirmations
+            
+            logger.debug(f"Signal confirmation: {confirmation_score}/{max_confirmations} "
+                        f"({confirmation_ratio:.1%}), minimum required: {min_ratio:.1%}")
+            
+            if confirmation_ratio >= min_ratio:
+                logger.debug(f"Signal CONFIRMED: {base_signal.value}")
+                return base_signal
+            else:
+                logger.debug(f"Signal DOWNGRADED: {base_signal.value} -> HOLD (insufficient confirmation)")
+                return SignalType.HOLD
+                
+        except Exception as e:
+            logger.warning(f"Error in signal confirmation: {str(e)}")
+            return base_signal  # Fallback to base signal if confirmation fails
+    
+    def _check_momentum_consistency(self, tema_values: pd.Series, signal: SignalType) -> bool:
+        """Check if momentum direction is consistent over recent periods."""
+        if len(tema_values) < self.confirmation_periods:
+            return False
+        
+        recent_tema = tema_values.iloc[-self.confirmation_periods:]
+        
+        if signal == SignalType.BUY:
+            # For BUY signal, check if momentum is generally increasing
+            increasing_count = sum(1 for i in range(1, len(recent_tema)) 
+                                 if recent_tema.iloc[i] > recent_tema.iloc[i-1])
+            return increasing_count >= (self.confirmation_periods - 1) * 0.6
+            
+        elif signal == SignalType.SELL:
+            # For SELL signal, check if momentum is generally decreasing
+            decreasing_count = sum(1 for i in range(1, len(recent_tema)) 
+                                 if recent_tema.iloc[i] < recent_tema.iloc[i-1])
+            return decreasing_count >= (self.confirmation_periods - 1) * 0.6
+        
+        return False
+    
+    def _check_timeframe_agreement(self, momentum_result: MomentumResult, signal: SignalType) -> bool:
+        """Check if multiple timeframes agree with the signal direction."""
+        # Only available if multi-timeframe analysis is enabled
+        if not hasattr(momentum_result, 'timeframe_consensus') or momentum_result.timeframe_consensus is None:
+            return True  # Skip if not available (don't penalize)
+        
+        consensus = momentum_result.timeframe_consensus
+        
+        if signal == SignalType.BUY:
+            return consensus > 0.3  # Bullish consensus
+        elif signal == SignalType.SELL:
+            return consensus < -0.3  # Bearish consensus
+        
+        return False
+    
+    def _check_volume_confirmation(self, market_data: MarketData, signal: SignalType) -> bool:
+        """Check if volume supports the signal direction."""
+        try:
+            if len(market_data.prices) < 5:
+                return True  # Skip if insufficient data
+            
+            # Calculate average volume over recent periods
+            recent_volume = market_data.prices['Volume'].iloc[-5:]
+            avg_volume = recent_volume.mean()
+            current_volume = market_data.volume
+            
+            # Volume should be above average for strong signals
+            volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1.0
+            
+            # Require at least 80% of average volume for confirmation
+            return volume_ratio >= 0.8
+            
+        except Exception as e:
+            logger.debug(f"Volume confirmation failed: {str(e)}")
+            return True  # Don't penalize if volume data unavailable
+    
+    def _check_price_momentum_alignment(self, momentum_result: MomentumResult, 
+                                       market_data: MarketData, signal: SignalType) -> bool:
+        """Check if price movement aligns with momentum signal."""
+        try:
+            if len(market_data.prices) < 3:
+                return True  # Skip if insufficient data
+            
+            # Calculate recent price change
+            recent_prices = market_data.prices['Close'].iloc[-3:]
+            price_change = (recent_prices.iloc[-1] - recent_prices.iloc[0]) / recent_prices.iloc[0]
+            
+            # Get momentum direction
+            current_momentum = momentum_result.current_momentum
+            
+            if signal == SignalType.BUY:
+                # For BUY signal, both price and momentum should be positive or momentum strongly positive
+                return (price_change > -0.01 and current_momentum > 0.5) or current_momentum > 1.0
+                
+            elif signal == SignalType.SELL:
+                # For SELL signal, both price and momentum should be negative or momentum strongly negative
+                return (price_change < 0.01 and current_momentum < -0.5) or current_momentum < -1.0
+            
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Price-momentum alignment check failed: {str(e)}")
+            return True  # Don't penalize if check fails
     
     def _calculate_confidence(self, 
                             momentum_result: MomentumResult, 
@@ -429,8 +620,9 @@ class SignalGenerator:
                                momentum: float,
                                direction: str,
                                confidence: float,
-                               threshold: float = None) -> str:
-        """Generate human-readable explanation for the signal with adaptive threshold info."""
+                               threshold: float = None,
+                               confirmation_info: str = None) -> str:
+        """Generate human-readable explanation for the signal with all enhancement info."""
         
         threshold_info = ""
         if threshold is not None and self.enable_adaptive_thresholds:
@@ -438,15 +630,22 @@ class SignalGenerator:
                 volatility_level = "high" if threshold > self.base_signal_threshold else "low"
                 threshold_info = f" (adaptive threshold: {threshold:.3f} for {volatility_level} volatility)"
         
+        confirmation_text = ""
+        if confirmation_info:
+            confirmation_text = f" - {confirmation_info}"
+        
         if signal == SignalType.BUY:
             return (f"Bullish momentum ({momentum:.3f}) with {direction} trend. "
-                   f"Confidence: {confidence:.0%}{threshold_info}")
+                   f"Confidence: {confidence:.0%}{threshold_info}{confirmation_text}")
         elif signal == SignalType.SELL:
             return (f"Bearish momentum ({momentum:.3f}) with {direction} trend. "
-                   f"Confidence: {confidence:.0%}{threshold_info}")
+                   f"Confidence: {confidence:.0%}{threshold_info}{confirmation_text}")
         else:
-            return (f"Neutral momentum ({momentum:.3f}) or low confidence ({confidence:.0%}). "
-                   f"Hold current position{threshold_info}.")
+            reason_base = f"Neutral momentum ({momentum:.3f}) or low confidence ({confidence:.0%}). Hold current position"
+            if confirmation_info == "downgraded":
+                return f"{reason_base} (signal downgraded due to insufficient confirmation){threshold_info}."
+            else:
+                return f"{reason_base}{threshold_info}."
     
     def _create_hold_signal(self, symbol: str, reason: str) -> TradingSignal:
         """Create a HOLD signal with explanation."""
