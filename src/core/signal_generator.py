@@ -74,14 +74,21 @@ class SignalGenerator:
     def __init__(self, 
                  signal_threshold: float = None,
                  confidence_threshold: float = None,
-                 strength_threshold: float = 0.15):  # Lowered from 0.3 to 0.15
+                 strength_threshold: float = 0.15,  # Lowered from 0.3 to 0.15
+                 enable_adaptive_thresholds: bool = True,
+                 volatility_multiplier: float = 2.0):
         
-        self.signal_threshold = signal_threshold or config.algorithm.signal_threshold
+        self.base_signal_threshold = signal_threshold or config.algorithm.signal_threshold
         self.confidence_threshold = confidence_threshold or config.algorithm.confidence_threshold
         self.strength_threshold = strength_threshold
         
+        # Adaptive threshold configuration
+        self.enable_adaptive_thresholds = enable_adaptive_thresholds
+        self.volatility_multiplier = volatility_multiplier  # How much volatility affects thresholds
+        
         logger.info(f"Signal generator initialized with thresholds: "
-                   f"signal={self.signal_threshold}, confidence={self.confidence_threshold}")
+                   f"base_signal={self.base_signal_threshold}, confidence={self.confidence_threshold}")
+        logger.info(f"Adaptive thresholds: {'enabled' if enable_adaptive_thresholds else 'disabled'}")
     
     def generate_signal(self, 
                        momentum_result: MomentumResult, 
@@ -113,11 +120,17 @@ class SignalGenerator:
             # Calculate signal confidence
             confidence = self._calculate_confidence(momentum_result, market_data)
             
-            # Generate base signal from momentum crossover
+            # Calculate adaptive threshold based on market conditions
+            adaptive_threshold = self._calculate_adaptive_threshold(
+                momentum_result, market_data
+            ) if self.enable_adaptive_thresholds else self.base_signal_threshold
+            
+            # Generate base signal from momentum crossover with adaptive threshold
             base_signal = self._determine_base_signal(
                 current_momentum, 
                 momentum_result.tema_values,
-                momentum_result.signal_line
+                momentum_result.signal_line,
+                adaptive_threshold
             )
             
             # Apply filters and confidence checks
@@ -135,9 +148,9 @@ class SignalGenerator:
             # Determine risk level
             risk_level = self._assess_risk_level(momentum_result, market_data)
             
-            # Create explanation
+            # Create explanation with adaptive threshold info
             reason = self._generate_signal_reason(
-                final_signal, current_momentum, direction, confidence
+                final_signal, current_momentum, direction, confidence, adaptive_threshold
             )
             
             return TradingSignal(
@@ -161,11 +174,15 @@ class SignalGenerator:
     def _determine_base_signal(self, 
                               current_momentum: float,
                               tema_values: pd.Series,
-                              signal_line: pd.Series) -> SignalType:
-        """Determine base signal from momentum indicators."""
+                              signal_line: pd.Series,
+                              threshold: float = None) -> SignalType:
+        """Determine base signal from momentum indicators with adaptive threshold."""
         
-        # Check zero-line crossover
-        if current_momentum > self.signal_threshold:
+        # Use provided threshold or fallback to base threshold
+        signal_threshold = threshold if threshold is not None else self.base_signal_threshold
+        
+        # Check adaptive threshold crossover
+        if current_momentum > signal_threshold:
             # Above zero line - potential buy
             if len(tema_values) >= 2:
                 # Check if momentum is strengthening
@@ -174,7 +191,7 @@ class SignalGenerator:
             else:
                 return SignalType.BUY
                 
-        elif current_momentum < -self.signal_threshold:
+        elif current_momentum < -signal_threshold:
             # Below zero line - potential sell
             if len(tema_values) >= 2:
                 # Check if momentum is weakening
@@ -184,6 +201,76 @@ class SignalGenerator:
                 return SignalType.SELL
         
         return SignalType.HOLD
+    
+    def _calculate_adaptive_threshold(self, 
+                                    momentum_result: MomentumResult, 
+                                    market_data: MarketData) -> float:
+        """Calculate adaptive signal threshold based on market volatility.
+        
+        Higher volatility = higher threshold (fewer signals, higher quality)
+        Lower volatility = lower threshold (more signals, earlier entry)
+        
+        Args:
+            momentum_result: Momentum calculation results
+            market_data: Current market data
+            
+        Returns:
+            Adaptive threshold value
+        """
+        try:
+            # Calculate market volatility using multiple methods
+            volatility_factors = []
+            
+            # Factor 1: Recent price volatility (20-day standard deviation)
+            if len(market_data.prices) >= 20:
+                recent_prices = market_data.prices['Close'].iloc[-20:]
+                price_returns = recent_prices.pct_change().dropna()
+                if len(price_returns) > 0:
+                    price_volatility = price_returns.std()
+                    # Normalize to 0-1 scale (typical daily volatility 0-5%)
+                    normalized_price_vol = min(1.0, price_volatility * 20)  # Scale up
+                    volatility_factors.append(normalized_price_vol)
+            
+            # Factor 2: Momentum volatility (stability of TEMA values)
+            if len(momentum_result.tema_values) >= 10:
+                recent_tema = momentum_result.tema_values.iloc[-10:]
+                tema_volatility = recent_tema.std()
+                # Normalize momentum volatility
+                if tema_volatility > 0:
+                    normalized_tema_vol = min(1.0, abs(tema_volatility) / 10.0)
+                    volatility_factors.append(normalized_tema_vol)
+            
+            # Factor 3: Multi-timeframe consensus volatility (if available)
+            if (hasattr(momentum_result, 'timeframe_consensus') and 
+                momentum_result.timeframe_consensus is not None):
+                # Lower consensus = higher uncertainty = higher volatility
+                consensus = abs(momentum_result.timeframe_consensus)
+                consensus_volatility = 1.0 - consensus  # Invert: low consensus = high volatility
+                volatility_factors.append(consensus_volatility)
+            
+            # Calculate overall volatility score
+            if volatility_factors:
+                avg_volatility = sum(volatility_factors) / len(volatility_factors)
+            else:
+                avg_volatility = 0.5  # Default medium volatility
+            
+            # Apply volatility to threshold
+            # High volatility -> higher threshold (more conservative)
+            # Low volatility -> lower threshold (more sensitive)
+            volatility_adjustment = avg_volatility * self.volatility_multiplier
+            adaptive_threshold = self.base_signal_threshold + volatility_adjustment
+            
+            logger.debug(f"Adaptive threshold calculation: "
+                        f"base={self.base_signal_threshold:.3f}, "
+                        f"volatility={avg_volatility:.3f}, "
+                        f"adjustment={volatility_adjustment:.3f}, "
+                        f"adaptive={adaptive_threshold:.3f}")
+            
+            return adaptive_threshold
+            
+        except Exception as e:
+            logger.warning(f"Error calculating adaptive threshold: {str(e)}")
+            return self.base_signal_threshold  # Fallback to base threshold
     
     def _calculate_confidence(self, 
                             momentum_result: MomentumResult, 
@@ -208,9 +295,23 @@ class SignalGenerator:
             volume_factor = min(1.0, 0.7)  # Simplified for MVP
             confidence_factors.append(volume_factor)
         
-        # Factor 4: Distance from zero line (higher distance = higher confidence)
+        # Factor 4: Distance from threshold (higher distance = higher confidence)
+        # Use adaptive threshold if available
+        reference_threshold = 0.0  # Default zero line
         distance_factor = min(1.0, abs(momentum_result.current_momentum) / 2.0)
         confidence_factors.append(distance_factor)
+        
+        # Factor 5: Adaptive threshold factor (if enabled)
+        if self.enable_adaptive_thresholds:
+            # Higher threshold means more conservative, so crossing it should increase confidence
+            try:
+                adaptive_threshold = self._calculate_adaptive_threshold(momentum_result, market_data)
+                if adaptive_threshold > self.base_signal_threshold:
+                    # In high volatility, crossing threshold is more significant
+                    threshold_boost = min(0.3, (adaptive_threshold - self.base_signal_threshold) * 0.1)
+                    confidence_factors.append(0.7 + threshold_boost)  # Base + boost
+            except Exception:
+                pass  # Skip if calculation fails
         
         # Calculate weighted average
         if confidence_factors:
@@ -327,18 +428,25 @@ class SignalGenerator:
                                signal: SignalType,
                                momentum: float,
                                direction: str,
-                               confidence: float) -> str:
-        """Generate human-readable explanation for the signal."""
+                               confidence: float,
+                               threshold: float = None) -> str:
+        """Generate human-readable explanation for the signal with adaptive threshold info."""
+        
+        threshold_info = ""
+        if threshold is not None and self.enable_adaptive_thresholds:
+            if threshold != self.base_signal_threshold:
+                volatility_level = "high" if threshold > self.base_signal_threshold else "low"
+                threshold_info = f" (adaptive threshold: {threshold:.3f} for {volatility_level} volatility)"
         
         if signal == SignalType.BUY:
             return (f"Bullish momentum ({momentum:.3f}) with {direction} trend. "
-                   f"Confidence: {confidence:.0%}")
+                   f"Confidence: {confidence:.0%}{threshold_info}")
         elif signal == SignalType.SELL:
             return (f"Bearish momentum ({momentum:.3f}) with {direction} trend. "
-                   f"Confidence: {confidence:.0%}")
+                   f"Confidence: {confidence:.0%}{threshold_info}")
         else:
             return (f"Neutral momentum ({momentum:.3f}) or low confidence ({confidence:.0%}). "
-                   f"Hold current position.")
+                   f"Hold current position{threshold_info}.")
     
     def _create_hold_signal(self, symbol: str, reason: str) -> TradingSignal:
         """Create a HOLD signal with explanation."""
