@@ -81,7 +81,8 @@ class SignalGenerator:
                  confirmation_periods: int = 3,
                  min_confirmations: int = 2,
                  enable_divergence_detection: bool = True,
-                 divergence_lookback: int = 10):
+                 divergence_lookback: int = 10,
+                 backtesting_mode: bool = False):
         
         self.base_signal_threshold = signal_threshold or config.algorithm.signal_threshold
         self.confidence_threshold = confidence_threshold or config.algorithm.confidence_threshold
@@ -100,6 +101,9 @@ class SignalGenerator:
         self.enable_divergence_detection = enable_divergence_detection
         self.divergence_lookback = divergence_lookback  # Periods to analyze for divergences
         
+        # Backtesting mode configuration
+        self.backtesting_mode = backtesting_mode
+        
         logger.info(f"Signal generator initialized with thresholds: "
                    f"base_signal={self.base_signal_threshold}, confidence={self.confidence_threshold}")
         logger.info(f"Adaptive thresholds: {'enabled' if enable_adaptive_thresholds else 'disabled'}")
@@ -107,6 +111,7 @@ class SignalGenerator:
                    f"(periods={confirmation_periods}, min={min_confirmations})")
         logger.info(f"Divergence detection: {'enabled' if enable_divergence_detection else 'disabled'} "
                    f"(lookback={divergence_lookback})")
+        logger.info(f"Backtesting mode: {'enabled' if backtesting_mode else 'disabled'}")
     
     def generate_signal(self, 
                        momentum_result: MomentumResult, 
@@ -756,11 +761,12 @@ class SignalGenerator:
         if strength < self.strength_threshold:
             return SignalType.HOLD
         
-        # Filter 3: Direction confirmation
-        if base_signal == SignalType.BUY and direction != 'bullish':
-            return SignalType.HOLD
-        elif base_signal == SignalType.SELL and direction != 'bearish':
-            return SignalType.HOLD
+        # Filter 3: Direction confirmation (skip in backtesting mode for more trades)
+        if not self.backtesting_mode:
+            if base_signal == SignalType.BUY and direction != 'bullish':
+                return SignalType.HOLD
+            elif base_signal == SignalType.SELL and direction != 'bearish':
+                return SignalType.HOLD
         
         return base_signal
     

@@ -13,7 +13,7 @@ import asyncio
 import time
 from typing import Dict, List, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 
 # Set up logging
@@ -31,6 +31,11 @@ from core.momentum_calculator import NaturalMomentumCalculator
 from core.signal_generator import SignalGenerator, SignalType
 from utils.config import config
 
+# Backtesting imports
+from backtesting.backtest_engine import BacktestEngine, BacktestSettings, BacktestResults
+from backtesting.data_provider import DataProvider, DataRequest
+from backtesting.performance_metrics import PerformanceAnalyzer
+
 
 class PortfolioDashboard:
     """Main dashboard class handling the complete workflow."""
@@ -39,6 +44,11 @@ class PortfolioDashboard:
         self.data_manager = AsyncDataManager()
         self.momentum_calculator = NaturalMomentumCalculator()
         self.signal_generator = SignalGenerator()
+        
+        # Backtesting components
+        self.data_provider = DataProvider(cache_directory="data/cache")
+        self.performance_analyzer = PerformanceAnalyzer()
+        self.backtest_engine = BacktestEngine(self.momentum_calculator, self.signal_generator)
         
         # Initialize session state
         if 'portfolio' not in st.session_state:
@@ -51,6 +61,12 @@ class PortfolioDashboard:
             st.session_state.signals = None
         if 'analysis_complete' not in st.session_state:
             st.session_state.analysis_complete = False
+        
+        # Backtesting session state
+        if 'backtest_results' not in st.session_state:
+            st.session_state.backtest_results = None
+        if 'backtest_metrics' not in st.session_state:
+            st.session_state.backtest_metrics = None
     
     def run(self):
         """Main dashboard entry point."""
@@ -937,8 +953,8 @@ class PortfolioDashboard:
         """Render analysis results with charts and tables."""
         st.header("📊 Analysis Results")
         
-        # Create tabs for different views - Portfolio Overview first, then results
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Portfolio Overview", "📋 Signals Overview", "📈 Charts", "🎯 Detailed Analysis", "📤 Export"])
+        # Create tabs for different views - Portfolio Overview first, then results, plus backtesting
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Portfolio Overview", "📋 Signals Overview", "📈 Charts", "🎯 Detailed Analysis", "📤 Export", "⏳ Backtesting"])
         
         with tab1:
             if st.session_state.portfolio:
@@ -955,6 +971,9 @@ class PortfolioDashboard:
         
         with tab5:
             self._render_export_section()
+        
+        with tab6:
+            self._render_backtesting_section()
     
     def _render_signals_overview(self):
         """Render signals overview table."""
@@ -1978,6 +1997,387 @@ class PortfolioDashboard:
             recommendation = "Hold position or wait for clearer signals"
         
         return f"{momentum_assessment}. {trend_note}. {risk_note}. {recommendation}."
+    
+    def _render_backtesting_section(self):
+        """Render the backtesting section with strategy testing capabilities."""
+        st.markdown("""
+        ### ⏳ Historical Backtesting
+        Test your portfolio's momentum strategy against historical data to validate performance.
+        """)
+        
+        # Check if we have portfolio symbols to work with
+        if not st.session_state.portfolio:
+            st.info("📝 **Upload a portfolio first** to use symbols for backtesting, or test with sample symbols below.")
+            
+            # Provide sample symbol options
+            st.markdown("#### 🔬 Test with Sample Portfolios")
+            sample_portfolios = {
+                "Tech Leaders": ["AAPL", "MSFT", "GOOGL", "AMZN", "META"],
+                "Market Mix": ["SPY", "QQQ", "IWM", "VTI", "VOO"],
+                "Growth Stocks": ["TSLA", "NVDA", "CRM", "ADBE", "NFLX"]
+            }
+            
+            selected_portfolio = st.selectbox(
+                "Choose a sample portfolio",
+                list(sample_portfolios.keys())
+            )
+            symbols = sample_portfolios[selected_portfolio]
+            
+        else:
+            # Use symbols from uploaded portfolio
+            symbols = st.session_state.portfolio.symbols
+            st.success(f"✅ Using symbols from your uploaded portfolio: {', '.join(symbols[:5])}")
+            if len(symbols) > 5:
+                st.info(f"➕ Plus {len(symbols)-5} more symbols")
+        
+        # Backtesting configuration
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown("#### ⚙️ Backtest Configuration")
+            
+            # Date range
+            end_date = datetime.now() - timedelta(days=1)
+            start_date = end_date - timedelta(days=365)
+            
+            date_col1, date_col2 = st.columns(2)
+            with date_col1:
+                backtest_start = st.date_input(
+                    "Start Date",
+                    value=start_date,
+                    max_value=end_date
+                )
+            with date_col2:
+                backtest_end = st.date_input(
+                    "End Date", 
+                    value=end_date,
+                    max_value=datetime.now()
+                )
+            
+            # Strategy parameters
+            initial_capital = st.number_input(
+                "Initial Capital ($)",
+                min_value=1000,
+                max_value=1000000,
+                value=100000,
+                step=1000
+            )
+            
+            max_position_size = st.slider(
+                "Max Position Size (%)",
+                min_value=5,
+                max_value=50,
+                value=20,
+                help="Maximum percentage of portfolio per position"
+            ) / 100
+            
+        with col2:
+            st.markdown("#### 💸 Trading Costs")
+            
+            commission_rate = st.slider(
+                "Commission (%)",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.1,
+                step=0.01
+            ) / 100
+            
+            slippage_rate = st.slider(
+                "Slippage (%)", 
+                min_value=0.0,
+                max_value=0.5,
+                value=0.05,
+                step=0.01
+            ) / 100
+        
+        # Enhanced features toggles
+        st.markdown("#### 🔧 Enhanced Algorithm Features")
+        
+        feature_col1, feature_col2 = st.columns(2)
+        with feature_col1:
+            enable_multi_timeframe = st.checkbox(
+                "Multi-Timeframe Analysis",
+                value=True,
+                help="Analyze momentum across multiple timeframes"
+            )
+            enable_adaptive_thresholds = st.checkbox(
+                "Adaptive Signal Thresholds", 
+                value=True,
+                help="Adjust thresholds based on market volatility"
+            )
+            
+        with feature_col2:
+            enable_signal_confirmation = st.checkbox(
+                "Signal Confirmation Logic",
+                value=True,
+                help="Require multiple confirmations before trading"
+            )
+            enable_divergence_detection = st.checkbox(
+                "Divergence Detection",
+                value=True,
+                help="Detect momentum divergences for reversal signals"
+            )
+        
+        # Run backtest button
+        if st.button("🚀 Run Historical Backtest", type="primary", use_container_width=True):
+            with st.spinner("Running backtesting analysis..."):
+                try:
+                    # Update algorithm components with enhanced settings
+                    enhanced_momentum_calc = NaturalMomentumCalculator(
+                        enable_multi_timeframe=enable_multi_timeframe
+                    )
+                    enhanced_signal_gen = SignalGenerator(
+                        enable_adaptive_thresholds=enable_adaptive_thresholds,
+                        enable_signal_confirmation=enable_signal_confirmation,
+                        enable_divergence_detection=enable_divergence_detection,
+                        strength_threshold=0.01,  # Lower threshold for backtesting
+                        backtesting_mode=True     # Enable backtesting mode for more trades
+                    )
+                    enhanced_backtest_engine = BacktestEngine(enhanced_momentum_calc, enhanced_signal_gen)
+                    
+                    # Fetch historical data
+                    data_request = DataRequest(
+                        symbols=symbols,
+                        start_date=datetime.combine(backtest_start, datetime.min.time()),
+                        end_date=datetime.combine(backtest_end, datetime.min.time()),
+                        data_source="yahoo"
+                    )
+                    
+                    historical_data = self.data_provider.fetch_historical_data(data_request)
+                    
+                    if not historical_data:
+                        st.error("❌ Failed to fetch historical data. Please try different symbols or date range.")
+                        return
+                    
+                    # Configure backtest settings
+                    settings = BacktestSettings(
+                        start_date=datetime.combine(backtest_start, datetime.min.time()),
+                        end_date=datetime.combine(backtest_end, datetime.min.time()),
+                        initial_capital=initial_capital,
+                        commission_rate=commission_rate,
+                        slippage_rate=slippage_rate,
+                        max_position_size=max_position_size
+                    )
+                    
+                    # Run backtest
+                    results = enhanced_backtest_engine.run_backtest(historical_data, settings)
+                    
+                    # Calculate comprehensive metrics
+                    metrics = self.performance_analyzer.analyze(results)
+                    
+                    # Update Calmar ratio
+                    self.performance_analyzer.update_calmar_ratio(
+                        metrics.ratios, metrics.returns, metrics.drawdown
+                    )
+                    
+                    # Store results in session state
+                    st.session_state.backtest_results = results
+                    st.session_state.backtest_metrics = metrics
+                    
+                    st.success("✅ Backtest completed successfully!")
+                    
+                except Exception as e:
+                    st.error(f"❌ Backtest failed: {str(e)}")
+                    return
+        
+        # Display results if available
+        if st.session_state.backtest_results is not None and st.session_state.backtest_metrics is not None:
+            self._render_backtest_results()
+    
+    def _render_backtest_results(self):
+        """Render comprehensive backtest results."""
+        results = st.session_state.backtest_results
+        metrics = st.session_state.backtest_metrics
+        
+        st.markdown("---")
+        st.markdown("### 📊 Backtest Results")
+        
+        # Key metrics summary
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "Total Return",
+                f"{results.total_return:.1%}",
+                delta=f"${results.final_capital - results.initial_capital:,.0f}"
+            )
+        
+        with col2:
+            st.metric(
+                "Annualized Return", 
+                f"{results.annualized_return:.1%}",
+                delta=f"Sharpe: {metrics.ratios.sharpe_ratio:.2f}"
+            )
+        
+        with col3:
+            st.metric(
+                "Max Drawdown",
+                f"{metrics.drawdown.max_drawdown:.1%}",
+                delta=f"{metrics.drawdown.max_drawdown_duration} days",
+                delta_color="inverse"
+            )
+        
+        with col4:
+            st.metric(
+                "Win Rate",
+                f"{metrics.trading.win_rate:.1%}",
+                delta=f"{metrics.trading.total_trades} trades"
+            )
+        
+        # Performance chart
+        if results.portfolio_history:
+            st.markdown("#### 📈 Portfolio Performance")
+            
+            # Create performance DataFrame
+            perf_df = pd.DataFrame([
+                {
+                    'Date': snapshot.date,
+                    'Portfolio Value': snapshot.total_value,
+                    'Return': snapshot.cumulative_return * 100
+                }
+                for snapshot in results.portfolio_history
+            ])
+            
+            # Create dual-axis chart
+            fig = make_subplots(
+                rows=2, cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.1,
+                subplot_titles=['Portfolio Value ($)', 'Cumulative Return (%)'],
+                row_heights=[0.7, 0.3]
+            )
+            
+            # Portfolio value
+            fig.add_trace(
+                go.Scatter(
+                    x=perf_df['Date'],
+                    y=perf_df['Portfolio Value'],
+                    mode='lines',
+                    name='Portfolio Value',
+                    line=dict(color='#1f77b4', width=2)
+                ),
+                row=1, col=1
+            )
+            
+            # Cumulative return
+            fig.add_trace(
+                go.Scatter(
+                    x=perf_df['Date'],
+                    y=perf_df['Return'],
+                    mode='lines',
+                    name='Cumulative Return',
+                    line=dict(color='#ff7f0e', width=2),
+                    fill='tonexty'
+                ),
+                row=2, col=1
+            )
+            
+            fig.update_layout(
+                height=500,
+                showlegend=False,
+                title_text="Historical Performance"
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Detailed metrics tabs
+        result_tab1, result_tab2, result_tab3 = st.tabs(["📊 Performance Metrics", "💹 Trading Analysis", "🎯 Risk Analysis"])
+        
+        with result_tab1:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Return Metrics**")
+                return_data = {
+                    "Total Return": f"{metrics.returns.total_return:.2%}",
+                    "Annualized Return": f"{metrics.returns.annualized_return:.2%}",
+                    "Volatility": f"{metrics.risk.volatility:.2%}",
+                    "Sharpe Ratio": f"{metrics.ratios.sharpe_ratio:.3f}",
+                    "Sortino Ratio": f"{metrics.ratios.sortino_ratio:.3f}"
+                }
+                st.table(pd.DataFrame(list(return_data.items()), columns=["Metric", "Value"]))
+            
+            with col2:
+                st.markdown("**Risk Metrics**")
+                risk_data = {
+                    "Max Drawdown": f"{metrics.drawdown.max_drawdown:.2%}",
+                    "VaR (95%)": f"{metrics.risk.var_95:.2%}",
+                    "Calmar Ratio": f"{metrics.ratios.calmar_ratio:.3f}",
+                    "Recovery Factor": f"{metrics.drawdown.recovery_factor:.2f}",
+                    "Pain Index": f"{metrics.drawdown.pain_index:.2%}"
+                }
+                st.table(pd.DataFrame(list(risk_data.items()), columns=["Metric", "Value"]))
+        
+        with result_tab2:
+            if results.trades:
+                st.markdown("**Trading Statistics**")
+                
+                # Trading metrics
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    trade_data = {
+                        "Total Trades": metrics.trading.total_trades,
+                        "Winning Trades": metrics.trading.winning_trades,
+                        "Losing Trades": metrics.trading.losing_trades,
+                        "Win Rate": f"{metrics.trading.win_rate:.1%}",
+                        "Profit Factor": f"{metrics.trading.profit_factor:.2f}"
+                    }
+                    st.table(pd.DataFrame(list(trade_data.items()), columns=["Metric", "Value"]))
+                
+                with col2:
+                    pnl_data = {
+                        "Average Win": f"${metrics.trading.avg_win:.2f}",
+                        "Average Loss": f"${metrics.trading.avg_loss:.2f}",
+                        "Largest Win": f"${metrics.trading.largest_win:.2f}",
+                        "Largest Loss": f"${metrics.trading.largest_loss:.2f}",
+                        "Expectancy": f"${metrics.trading.expectancy:.2f}"
+                    }
+                    st.table(pd.DataFrame(list(pnl_data.items()), columns=["Metric", "Value"]))
+                
+                # Recent trades table
+                st.markdown("**Recent Trades**")
+                recent_trades = results.trades[-10:] if len(results.trades) > 10 else results.trades
+                
+                trades_df = pd.DataFrame([
+                    {
+                        'Symbol': trade.symbol,
+                        'Type': trade.order_type.value,
+                        'Entry Date': trade.entry_date.strftime('%Y-%m-%d'),
+                        'Entry Price': f"${trade.entry_price:.2f}",
+                        'Quantity': trade.quantity,
+                        'P&L': f"${trade.pnl:.2f}",
+                        'Confidence': f"{trade.signal_confidence:.0%}"
+                    }
+                    for trade in recent_trades
+                ])
+                
+                st.dataframe(trades_df, use_container_width=True)
+            else:
+                st.info("No trades were executed during the backtest period.")
+        
+        with result_tab3:
+            # Risk analysis and performance scores
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Performance Scores**")
+                score_data = {
+                    "Risk-Adjusted Score": f"{metrics.risk_adjusted_score:.3f}",
+                    "Consistency Score": f"{metrics.consistency_score:.3f}",
+                    "Efficiency Score": f"{metrics.efficiency_score:.3f}"
+                }
+                st.table(pd.DataFrame(list(score_data.items()), columns=["Score", "Value"]))
+            
+            with col2:
+                st.markdown("**Cost Analysis**") 
+                cost_data = {
+                    "Total Commission": f"${results.total_commission_paid:.2f}",
+                    "Total Slippage": f"${results.total_slippage_cost:.2f}",
+                    "Total Costs": f"${results.total_commission_paid + results.total_slippage_cost:.2f}",
+                    "Cost Ratio": f"{(results.total_commission_paid + results.total_slippage_cost) / results.initial_capital:.3%}"
+                }
+                st.table(pd.DataFrame(list(cost_data.items()), columns=["Cost", "Value"]))
 
 
 def main():
