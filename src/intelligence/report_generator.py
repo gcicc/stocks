@@ -28,41 +28,67 @@ class ReportGenerator:
         self.macro_provider = MacroDataProvider()
         logger.info("Report generator initialized")
     
-    def generate_portfolio_attribution(self, portfolio, signals: Dict) -> Tuple[pd.DataFrame, go.Figure]:
+    def generate_portfolio_attribution(self, portfolio, signals: Dict = None) -> Tuple[pd.DataFrame, go.Figure]:
         """
         Generate portfolio performance attribution analysis.
+        Works with or without signals - shows portfolio composition and potential impact.
         
         Args:
             portfolio: Portfolio object with positions
-            signals: Dictionary of trading signals
+            signals: Dictionary of trading signals (optional)
             
         Returns:
             Tuple of (attribution DataFrame, Plotly waterfall chart)
         """
         try:
             attribution_data = []
-            total_portfolio_value = portfolio.total_market_value if hasattr(portfolio, 'total_market_value') else 0
+            
+            # Calculate total portfolio value
+            total_portfolio_value = 0
+            position_values = {}
             
             for position in portfolio.positions:
                 symbol = position.symbol
-                position_value = getattr(position, 'market_value', getattr(position, 'value', 0))
+                # Try different attribute names for position value
+                position_value = getattr(position, 'market_value', 
+                                       getattr(position, 'value', 
+                                              getattr(position, 'total_value', 0)))
+                position_values[symbol] = position_value
+                total_portfolio_value += position_value
+            
+            # If no portfolio value calculated, use a fallback approach
+            if total_portfolio_value == 0:
+                logger.warning("Could not calculate total portfolio value, using equal weights")
+                equal_weight = 100.0 / len(portfolio.positions) if portfolio.positions else 0
+                for position in portfolio.positions:
+                    position_values[position.symbol] = 1000 * equal_weight  # Assume $1000 per position
+                total_portfolio_value = sum(position_values.values())
+            
+            for position in portfolio.positions:
+                symbol = position.symbol
+                position_value = position_values[symbol]
                 
                 # Calculate position weight
                 weight = (position_value / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
                 
                 # Get signal data if available
-                signal_data = signals.get(symbol)
-                signal_type = signal_data.signal.value if signal_data else "HOLD"
-                confidence = signal_data.confidence if signal_data else 0.0
-                
-                # Calculate theoretical impact (simplified for demo)
-                # In production, this would use actual performance data
-                if signal_type == "BUY":
-                    impact_score = weight * confidence
-                elif signal_type == "SELL":
-                    impact_score = -weight * confidence
+                if signals and symbol in signals:
+                    signal_data = signals[symbol]
+                    signal_type = signal_data.signal.value if hasattr(signal_data, 'signal') else "HOLD"
+                    confidence = signal_data.confidence if hasattr(signal_data, 'confidence') else 0.0
+                    
+                    # Calculate impact based on signal and confidence
+                    if signal_type == "BUY":
+                        impact_score = weight * confidence
+                    elif signal_type == "SELL":
+                        impact_score = -weight * confidence
+                    else:
+                        impact_score = weight * 0.1  # Small positive for HOLD
                 else:
-                    impact_score = 0
+                    # No signals available - show neutral impact based on weight
+                    signal_type = "ANALYZING"
+                    confidence = 0.0
+                    impact_score = weight * 0.1  # Small positive impact for all positions
                 
                 attribution_data.append({
                     'Symbol': symbol,
@@ -76,12 +102,20 @@ class ReportGenerator:
             
             # Create professional DataFrame
             df = pd.DataFrame(attribution_data)
-            df = df.sort_values('Impact_Score', ascending=False).reset_index(drop=True)
             
-            # Create professional waterfall chart
-            fig = self._create_attribution_chart(df)
-            
-            return df, fig
+            if not df.empty:
+                # Sort by portfolio weight (largest positions first)
+                df = df.sort_values('Portfolio_Weight_%', ascending=False).reset_index(drop=True)
+                
+                # Create professional waterfall chart
+                fig = self._create_attribution_chart(df)
+                
+                return df, fig
+            else:
+                # Return empty but valid structures
+                empty_df = pd.DataFrame(columns=['Symbol', 'Position_Value', 'Portfolio_Weight_%', 'Signal', 'Confidence', 'Impact_Score', 'Status'])
+                empty_fig = go.Figure()
+                return empty_df, empty_fig
             
         except Exception as e:
             logger.error(f"Portfolio attribution generation failed: {e}")
@@ -130,13 +164,17 @@ class ReportGenerator:
     
     def _get_impact_status(self, score: float) -> str:
         """Get professional impact status."""
-        if score > 2:
+        if score > 5:
+            return "Major Contributor"
+        elif score > 2:
             return "Strong Contributor"
-        elif score > 0:
+        elif score > 0.5:
             return "Contributor" 
+        elif score < -5:
+            return "Major Drag"
         elif score < -2:
             return "Strong Drag"
-        elif score < 0:
+        elif score < -0.5:
             return "Drag"
         else:
             return "Neutral"

@@ -2899,6 +2899,12 @@ class PortfolioDashboard:
         """Render portfolio intelligence with attribution analysis."""
         st.subheader("📊 Portfolio Performance Attribution")
         
+        # Check if signals are available
+        signals_available = bool(st.session_state.get('signals', {}))
+        
+        if not signals_available:
+            st.info("💡 **Tip**: Run portfolio analysis first (Dashboard → Analyze Portfolio) to see signal-based attribution. Currently showing portfolio composition analysis.")
+        
         try:
             with st.spinner("Analyzing portfolio performance attribution..."):
                 # Get portfolio attribution analysis
