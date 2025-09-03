@@ -41,6 +41,10 @@ from backtesting.backtest_engine import BacktestEngine, BacktestSettings, Backte
 from backtesting.data_provider import DataProvider, DataRequest
 from backtesting.performance_metrics import PerformanceAnalyzer
 
+# Market Intelligence imports
+from intelligence.news_analyzer import NewsAnalyzer
+from intelligence.report_generator import ReportGenerator
+
 
 class PortfolioDashboard:
     """Main dashboard class handling the complete workflow."""
@@ -539,7 +543,7 @@ class PortfolioDashboard:
     def _render_main_content(self):
         """Render the main content area with top-level tabs."""
         # Create main tabs
-        main_tab1, main_tab2 = st.tabs(["🏠 Dashboard", "📚 Documentation"])
+        main_tab1, main_tab2, main_tab3 = st.tabs(["🏠 Dashboard", "📰 Market Intelligence", "📚 Documentation"])
         
         with main_tab1:
             if st.session_state.portfolio is None:
@@ -556,6 +560,9 @@ class PortfolioDashboard:
             self._render_footer()
         
         with main_tab2:
+            self._render_market_intelligence()
+        
+        with main_tab3:
             self._render_documentation()
     
     def _render_welcome_screen(self):
@@ -2843,6 +2850,226 @@ class PortfolioDashboard:
                 }
                 st.table(pd.DataFrame(list(cost_data.items()), columns=["Cost", "Value"]))
 
+    def _render_market_intelligence(self):
+        """Render Market Intelligence tab with professional visualizations."""
+        st.header("📰 Market Intelligence Report")
+        
+        if st.session_state.portfolio is None:
+            st.info("💡 Please upload a portfolio to generate market intelligence reports.")
+            return
+        
+        # Initialize intelligence components
+        try:
+            news_analyzer = NewsAnalyzer()
+            report_generator = ReportGenerator()
+        except Exception as e:
+            st.error(f"Failed to initialize market intelligence components: {e}")
+            return
+        
+        # Generate Report Button
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            generate_report = st.button(
+                "🚀 Generate Intelligence Report",
+                type="primary",
+                use_container_width=True,
+                help="Generate comprehensive market intelligence report with news sentiment and performance attribution"
+            )
+        
+        if generate_report or st.session_state.get('intelligence_report_generated', False):
+            st.session_state.intelligence_report_generated = True
+            
+            # Create professional sub-tabs
+            intel_tab1, intel_tab2, intel_tab3 = st.tabs([
+                "📊 Portfolio Intelligence", 
+                "🌐 Market Overview", 
+                "📰 News & Sentiment"
+            ])
+            
+            with intel_tab1:
+                self._render_portfolio_intelligence(report_generator)
+            
+            with intel_tab2:
+                self._render_market_overview(report_generator)
+            
+            with intel_tab3:
+                self._render_news_sentiment(news_analyzer)
+    
+    def _render_portfolio_intelligence(self, report_generator):
+        """Render portfolio intelligence with attribution analysis."""
+        st.subheader("📊 Portfolio Performance Attribution")
+        
+        try:
+            with st.spinner("Analyzing portfolio performance attribution..."):
+                # Get portfolio attribution analysis
+                attribution_df, attribution_chart = report_generator.generate_portfolio_attribution(
+                    st.session_state.portfolio, 
+                    st.session_state.get('signals', {})
+                )
+                
+                if not attribution_df.empty:
+                    # Display professional metrics
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        contributors = len(attribution_df[attribution_df['Impact_Score'] > 0])
+                        st.metric("Contributors", contributors, help="Positions with positive impact")
+                    
+                    with col2:
+                        drags = len(attribution_df[attribution_df['Impact_Score'] < 0])
+                        st.metric("Drags", drags, help="Positions with negative impact")
+                    
+                    with col3:
+                        avg_impact = attribution_df['Impact_Score'].mean()
+                        st.metric("Avg Impact", f"{avg_impact:.2f}", help="Average impact score")
+                    
+                    with col4:
+                        total_positions = len(attribution_df)
+                        st.metric("Total Positions", total_positions)
+                    
+                    # Display professional chart
+                    st.plotly_chart(attribution_chart, use_container_width=True)
+                    
+                    # Display professional table
+                    st.subheader("📋 Detailed Attribution Analysis")
+                    
+                    # Apply professional styling to the dataframe
+                    def highlight_impact(row):
+                        impact = row['Impact_Score']
+                        if impact > 1:
+                            return ['background-color: rgba(0, 255, 0, 0.2)'] * len(row)
+                        elif impact < -1:
+                            return ['background-color: rgba(255, 0, 0, 0.2)'] * len(row)
+                        else:
+                            return ['background-color: rgba(128, 128, 128, 0.05)'] * len(row)
+                    
+                    st.dataframe(
+                        attribution_df.style.apply(highlight_impact, axis=1).format({
+                            'Position_Value': '${:,.2f}',
+                            'Portfolio_Weight_%': '{:.2f}%',
+                            'Confidence': '{:.3f}',
+                            'Impact_Score': '{:+.2f}'
+                        }),
+                        use_container_width=True,
+                        height=400
+                    )
+                    
+                else:
+                    st.warning("Unable to generate portfolio attribution analysis. Please ensure signals are available.")
+                    
+        except Exception as e:
+            st.error(f"Failed to generate portfolio intelligence: {e}")
+            logger.error(f"Portfolio intelligence generation failed: {e}")
+    
+    def _render_market_overview(self, report_generator):
+        """Render macro market overview dashboard."""
+        st.subheader("🌐 Macro Market Dashboard")
+        
+        try:
+            with st.spinner("Fetching market data..."):
+                market_summary, charts = report_generator.create_market_overview_dashboard()
+                
+                if not market_summary.empty:
+                    # Display key market metrics
+                    st.subheader("📈 Key Market Indicators")
+                    
+                    # Create metric columns for major indices
+                    indices_df = market_summary[market_summary['Indicator'].isin(['S&P 500', 'NASDAQ 100', 'Dow Jones', 'VIX'])]
+                    
+                    if not indices_df.empty:
+                        cols = st.columns(len(indices_df))
+                        for idx, (_, row) in enumerate(indices_df.iterrows()):
+                            with cols[idx]:
+                                delta_color = "normal" if row['Change_%'] >= 0 else "inverse"
+                                st.metric(
+                                    row['Indicator'],
+                                    f"{row['Current_Value']:.2f}",
+                                    f"{row['Change_%']:+.2f}%",
+                                    delta_color=delta_color
+                                )
+                    
+                    # Display professional charts
+                    chart_col1, chart_col2 = st.columns(2)
+                    
+                    with chart_col1:
+                        if 'market_performance' in charts:
+                            st.plotly_chart(charts['market_performance'], use_container_width=True)
+                    
+                    with chart_col2:
+                        if 'vix_gauge' in charts:
+                            st.plotly_chart(charts['vix_gauge'], use_container_width=True)
+                    
+                    # Display complete market summary table
+                    st.subheader("📊 Complete Market Summary")
+                    st.dataframe(
+                        market_summary.style.format({
+                            'Current_Value': '{:.2f}',
+                            'Change': '{:+.2f}',
+                            'Change_%': '{:+.2f}%'
+                        }),
+                        use_container_width=True
+                    )
+                    
+                else:
+                    st.warning("Unable to fetch market data. Please check your internet connection.")
+                    
+        except Exception as e:
+            st.error(f"Failed to generate market overview: {e}")
+            logger.error(f"Market overview generation failed: {e}")
+    
+    def _render_news_sentiment(self, news_analyzer):
+        """Render news sentiment analysis."""
+        st.subheader("📰 News Sentiment Analysis")
+        
+        try:
+            with st.spinner("Analyzing news sentiment for portfolio positions..."):
+                portfolio_symbols = [pos.symbol for pos in st.session_state.portfolio.positions]
+                sentiment_df = news_analyzer.analyze_portfolio_sentiment(portfolio_symbols)
+                
+                if not sentiment_df.empty:
+                    # Display sentiment summary metrics
+                    summary = news_analyzer.create_sentiment_summary_metrics(sentiment_df)
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Bullish Positions", f"{summary['bullish_count']}", 
+                                 f"{summary['bullish_percentage']:.1f}%")
+                    
+                    with col2:
+                        st.metric("Bearish Positions", f"{summary['bearish_count']}", 
+                                 f"{summary['bearish_percentage']:.1f}%")
+                    
+                    with col3:
+                        st.metric("Neutral Positions", f"{summary['neutral_count']}")
+                    
+                    with col4:
+                        st.metric("Avg Sentiment", f"{summary['avg_sentiment']:.3f}")
+                    
+                    # Display sentiment distribution chart
+                    news_analyzer.create_sentiment_distribution_chart(sentiment_df)
+                    
+                    # Display professional news table
+                    st.subheader("📋 News Sentiment Details")
+                    news_analyzer.display_professional_news_table(sentiment_df)
+                    
+                    # Display insights
+                    st.subheader("💡 Key Insights")
+                    insights = news_analyzer.get_news_insights(sentiment_df)
+                    for insight in insights:
+                        st.markdown(f"• {insight}")
+                    
+                else:
+                    st.info("No news sentiment data available. This could be due to:")
+                    st.markdown("""
+                    - Limited news coverage for your portfolio positions
+                    - API rate limits or connectivity issues
+                    - Symbols not found in news sources
+                    """)
+                    
+        except Exception as e:
+            st.error(f"Failed to analyze news sentiment: {e}")
+            logger.error(f"News sentiment analysis failed: {e}")
 
     def _render_documentation(self):
         """Render documentation content in tabs."""

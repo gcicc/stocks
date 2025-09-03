@@ -4,6 +4,10 @@ numpy>=1.24.0
 yfinance>=0.2.0
 requests>=2.31.0
 
+# Market Intelligence
+textblob>=0.17.1
+newsapi-python>=0.2.7
+
 # Technical Analysis
 pandas-ta>=0.3.14
 ta-lib>=0.4.25
