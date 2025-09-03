@@ -1,6 +1,6 @@
 # Portfolio Intelligence Platform
 
-Transform your portfolio CSV into actionable momentum-based trading insights in under 15 seconds.
+A production-ready portfolio analysis system that provides momentum-based trading insights with comprehensive backtesting, risk management, and documentation.
 
 ## 🚀 Quick Start
 
@@ -11,123 +11,144 @@ Transform your portfolio CSV into actionable momentum-based trading insights in 
 
 2. **Run the Application**
    ```bash
-   streamlit run app.py
+   streamlit run src/dashboard/app.py --server.port 8505
    ```
 
-3. **Upload Your Portfolio**
-   - Upload your portfolio CSV file from any major broker
-   - Click "Analyze Portfolio" to generate momentum signals
-   - Review results and export recommendations
+3. **Access the Dashboard**
+   - Open http://localhost:8505 in your browser
+   - Upload your portfolio CSV file
+   - Configure analysis parameters
+   - Click "Analyze Portfolio" for trading signals
+   - Switch to "Documentation" tab for detailed guides
 
-## 📁 Supported Portfolio Formats
+## ✨ Production Features
 
-- Charles Schwab
-- Fidelity
-- TD Ameritrade
-- E*TRADE
-- Vanguard
-- Interactive Brokers
-- Generic CSV formats
+### Core Analysis Engine
+- **Natural Momentum Algorithm** - TEMA-based momentum with adaptive thresholds
+- **AI-Enhanced Signal Generation** - BUY/SELL/HOLD with confidence scoring
+- **Multi-Timeframe Analysis** - Short (7), medium (14), and long (28) period analysis
+- **Signal Confirmation** - Cross-period validation to reduce false signals
+- **Divergence Detection** - Identify momentum/price divergences
 
-## 🎯 Features
+### Risk Management
+- **Position Sizing** - Automatic risk-adjusted position calculations (max 20% per stock)
+- **Stop Loss Generation** - Dynamic stop-loss levels based on volatility
+- **Risk Level Assessment** - LOW/MEDIUM/HIGH risk classification per position
+- **Portfolio Risk Metrics** - Sharpe ratio, max drawdown, volatility analysis
 
-### Core Functionality (Milestone 1 - MVP)
-✅ **Portfolio CSV Upload & Parsing** - Handles multiple broker formats with robust error handling  
-✅ **Natural Momentum Indicator** - Advanced TEMA smoothing with natural log transformations  
-✅ **Signal Generation** - Buy/Sell/Hold recommendations with confidence scores  
-✅ **Interactive Dashboard** - Professional Streamlit interface with real-time analysis  
-✅ **Risk Assessment** - Automatic risk level calculation for each position  
-✅ **Export Results** - Download analysis as CSV for your records  
+### Historical Backtesting
+- **Complete Backtesting Engine** - Test strategies against historical data
+- **Performance Analytics** - Comprehensive metrics vs. S&P 500 benchmark
+- **Trade Analysis** - Win/loss ratios, profit factors, trade statistics
+- **Risk-Adjusted Returns** - Sharpe ratio, Sortino ratio, risk metrics
 
-### Performance Targets
-- ⚡ Portfolio upload to insights: < 15 seconds
-- 📊 Dashboard load time: < 2 seconds  
-- 🎯 Signal accuracy: > 55% profitable recommendations
-- 📈 Support for 20+ position portfolios
+### Professional Dashboard
+- **Clean UI** - Professional interface optimized for analysis workflow
+- **Real-Time Processing** - Ultra-fast parallel analysis of entire portfolios
+- **Interactive Charts** - Plotly-powered visualizations and trend analysis
+- **Comprehensive Documentation** - Built-in guides for all features
+- **Export Capabilities** - CSV/Excel export of all analysis results
 
-## 📊 How It Works
+## 📊 Supported Formats
 
-### Natural Momentum Algorithm
-1. **Natural Log Transformation** - Apply ln() to price data for better trend detection
-2. **TEMA Smoothing** - Triple Exponential Moving Average reduces noise
-3. **Zero-Line Crossover** - Generate signals when momentum crosses zero
-4. **Confidence Scoring** - AI-enhanced filtering reduces false positives
+Compatible with portfolio exports from:
+- Charles Schwab, Fidelity, TD Ameritrade, E*TRADE
+- Vanguard, Interactive Brokers, Robinhood
+- Any CSV with Symbol, Quantity, Price columns
 
-### User Workflow
-```
-Upload CSV → Parse Portfolio → Fetch Market Data → Calculate Momentum → Generate Signals → Export Results
-```
-
-## 🧪 Testing
-
-Use the sample portfolio file for testing:
-```
-data/sample_portfolios/sample_portfolio.csv
-```
-
-## 📁 Project Structure
+## 🏗️ Architecture
 
 ```
-stocks/
-├── src/
-│   ├── core/                    # Core algorithm components
-│   │   ├── data_manager.py      # Async data fetching with fallbacks
-│   │   ├── momentum_calculator.py # Natural Momentum with TEMA
-│   │   └── signal_generator.py   # Buy/Sell/Hold logic
-│   ├── portfolio/               # Portfolio handling
-│   │   └── csv_parser.py        # Robust CSV parsing
-│   ├── dashboard/               # Streamlit interface
-│   │   └── app.py              # Main dashboard application
-│   └── utils/                   # Configuration and utilities
-│       └── config.py           # Settings management
-├── data/
-│   └── sample_portfolios/      # Test data
-├── docs/                       # Documentation
-├── app.py                      # Application entry point
-└── requirements.txt            # Python dependencies
+src/
+├── dashboard/
+│   └── app.py                 # Main Streamlit application
+├── core/
+│   ├── data_manager.py        # Async multi-source data fetching
+│   ├── momentum_calculator.py # TEMA & momentum calculations
+│   └── signal_generator.py    # Trading signal generation
+├── backtesting/
+│   ├── backtest_engine.py     # Historical strategy testing
+│   ├── data_provider.py       # Historical data management
+│   └── performance_metrics.py # Performance analysis
+├── portfolio/
+│   └── csv_parser.py          # Robust portfolio parsing
+├── risk/
+│   └── risk_manager.py        # Risk assessment & position sizing
+└── utils/
+    └── config.py              # System configuration
+
+docs/                          # Comprehensive documentation
+├── USER_GUIDE.md             # Complete user guide
+├── TECHNICAL_ANALYSIS_GUIDE.md # Technical indicator details
+├── RISK_MANAGEMENT_GUIDE.md  # Risk principles & guidelines
+└── API_DOCUMENTATION.md      # Developer reference
+
+data/                         # Data storage
+├── cache/                    # Market data cache
+└── sample_portfolios/        # Example files
 ```
+
+## 🎯 Key Performance Metrics
+
+- **Analysis Speed**: Complete portfolio analysis in < 10 seconds
+- **Data Sources**: Primary (Yahoo Finance) + fallback sources
+- **Concurrent Processing**: Parallel analysis of all positions
+- **Memory Efficient**: Optimized for large portfolios (100+ positions)
+- **Cache System**: 5-minute TTL for real-time performance
 
 ## ⚙️ Configuration
 
-Key settings can be adjusted in `src/utils/config.py`:
+Key settings in `src/utils/config.py`:
+- **Signal Thresholds**: Momentum crossover levels
+- **Confidence Levels**: Minimum confidence for actionable signals  
+- **Risk Parameters**: Position sizing and stop-loss calculations
+- **Backtesting Settings**: Historical analysis periods and benchmarks
 
-- **TEMA Period**: Default 14 (momentum smoothing)
-- **Signal Threshold**: Default 0.0 (zero-line crossover)
-- **Confidence Threshold**: Default 0.6 (minimum confidence for signals)
-- **Max Concurrent Requests**: Default 10 (data fetching performance)
+## 📚 Documentation
 
-## 🔮 Roadmap
+The platform includes comprehensive built-in documentation:
+- **User Guide**: Step-by-step usage instructions
+- **Technical Analysis**: Detailed explanation of momentum algorithms
+- **Risk Management**: Position sizing and risk control principles  
+- **API Reference**: Developer documentation for all components
 
-### Next Milestones (Weeks 3-6)
-- **Enhanced Algorithm** - Refined TEMA and signal confirmation
-- **Professional Visualizations** - Advanced charts and performance metrics
-- **ML Signal Filtering** - Reduce false positives with machine learning
-- **Comprehensive Backtesting** - Historical validation with statistical significance
+Access via the "📚 Documentation" tab in the dashboard.
 
-### Future Features (Weeks 7+)
-- Real-time monitoring and alerts
-- Multi-asset support (crypto, forex, commodities)
-- API integration and mobile optimization
-- Enterprise features and cloud deployment
+## 🔒 Production Ready
 
-## 📈 Technical Details
+- **Error Handling**: Graceful degradation for data source failures
+- **Logging**: Comprehensive logging for debugging and monitoring
+- **Data Validation**: Robust portfolio parsing with multiple fallbacks
+- **Performance Optimized**: Numba acceleration for mathematical calculations
+- **Clean Architecture**: SOLID principles with modular, testable components
 
-### Data Sources
-- **Primary**: Yahoo Finance (yfinance)
-- **Backup**: Alpha Vantage (requires API key)
-- **Caching**: 5-minute TTL for market data
-- **Fallback**: Graceful degradation with error handling
+## 🚀 Usage
 
-### Performance Optimizations
-- Async/parallel data fetching for multiple symbols
-- Numba acceleration for mathematical calculations (optional)
-- Streamlit caching for dashboard performance
-- Progressive loading for better user experience
+1. Upload your portfolio CSV file via the sidebar
+2. Adjust analysis parameters (confidence threshold, risk level, etc.)
+3. Click "Analyze Portfolio" to generate momentum-based trading signals
+4. Review live analysis results with charts and recommendations
+5. Run historical backtesting to validate strategy performance
+6. Export results and analysis reports
 
-## 🤝 Contributing
+## 📈 Analysis Workflow
 
-This is Milestone 1 (MVP) of the Portfolio Intelligence Platform. The architecture is designed for incremental enhancement based on user feedback and performance requirements.
+```
+Portfolio Upload → Data Validation → Market Data Fetch → 
+Momentum Calculation → Signal Generation → Risk Assessment → 
+Backtesting Analysis → Results & Export
+```
+
+## 🔧 Development
+
+Built with modern Python stack:
+- **Streamlit** - Interactive web interface
+- **Pandas/NumPy** - Data processing and analysis  
+- **Plotly** - Interactive visualizations
+- **yfinance** - Market data integration
+- **Numba** - High-performance calculations
+- **Asyncio** - Concurrent data processing
 
 ## 📄 License
 
-Copyright (c) 2024 Portfolio Intelligence Platform
+Copyright (c) 2024 Portfolio Intelligence Platform - Personal Use

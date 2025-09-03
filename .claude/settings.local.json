@@ -8,7 +8,10 @@
       "Bash(git checkout:*)",
       "Bash(git pull:*)",
       "Bash(python test:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(grep:*)",
+      "Bash(python:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

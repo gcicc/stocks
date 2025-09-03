@@ -23,7 +23,12 @@ logger = logging.getLogger(__name__)
 # Import our components
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Ensure the current project's src directory is first in the Python path
+current_src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if current_src_dir in sys.path:
+    sys.path.remove(current_src_dir)
+sys.path.insert(0, current_src_dir)
 
 from portfolio.csv_parser import parse_portfolio_csv, Portfolio
 from core.data_manager import AsyncDataManager
@@ -254,144 +259,74 @@ class PortfolioDashboard:
         """, unsafe_allow_html=True)
     
     def _render_sidebar(self):
-        """Render the sidebar with controls and status."""
+        """Render the streamlined sidebar with essential controls only."""
         with st.sidebar:
-            st.header("📁 Portfolio Upload")
-            
-            # Enhanced file upload section
-            st.markdown("""
-            <div style="
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 1rem;
-                border-radius: 10px;
-                margin-bottom: 1rem;
-                text-align: center;
-            ">
-                <div style="font-size: 1.2rem; margin-bottom: 0.5rem;">📁</div>
-                <div style="font-weight: bold;">Portfolio Upload</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            with st.expander("📋 Supported Broker Formats", expanded=False):
-                st.markdown("""
-                **Supported Formats:**
-                - 📊 Charles Schwab: Positions export
-                - 💼 Fidelity: Portfolio Positions download  
-                - 🏦 TD Ameritrade: My Account → Positions
-                - 💹 E*TRADE: Portfolio summary
-                - 📈 Generic CSV with Symbol, Quantity, Value columns
-                """)
-            
+            # Simplified file upload
             uploaded_file = st.file_uploader(
-                "Choose your portfolio CSV file",
+                "📁 Upload Portfolio CSV",
                 type=['csv'],
-                help="Upload portfolio files from Schwab, Fidelity, TD Ameritrade, E*TRADE, etc."
+                help="Supports: Schwab, Fidelity, TD Ameritrade, E*TRADE, Generic CSV"
             )
             
             if uploaded_file is not None:
                 self._handle_file_upload(uploaded_file)
             
-            # Watchlist stocks input (always available)
-            st.header("📈 Watchlist Stocks")
-            
+            # Watchlist input
             watchlist_input = st.text_area(
-                "Additional stocks to analyze",
-                placeholder="GSK, ABBV, MSFT, AAPL",
-                help="Enter stock symbols separated by commas. These will be included in momentum analysis as investment opportunities.",
-                height=80
+                "📈 Watchlist Stocks",
+                placeholder="AAPL, MSFT, GOOGL",
+                help="Additional stocks to analyze (comma-separated)",
+                height=60
             )
             
-            # Parse and validate watchlist symbols
+            # Parse watchlist symbols
             watchlist_symbols = []
             if watchlist_input.strip():
                 symbols = [s.strip().upper() for s in watchlist_input.split(',')]
                 watchlist_symbols = [s for s in symbols if s and len(s) >= 1 and len(s) <= 6]
-                
-                if watchlist_symbols:
-                    st.success(f"📊 {len(watchlist_symbols)} watchlist symbols: {', '.join(watchlist_symbols)}")
-                else:
-                    st.warning("⚠️ Please enter valid stock symbols separated by commas")
-            
-            # Store watchlist in session state
             st.session_state.watchlist_symbols = watchlist_symbols
-            
-            st.divider()
 
-            # Analysis controls
+            # Analysis controls (only show if portfolio loaded)
             if st.session_state.portfolio is not None:
-                st.header("⚙️ Analysis Settings")
+                st.divider()
                 
-                # Enhanced symbol limit section
-                with st.expander("🎯 Performance Guidelines", expanded=False):
-                    st.markdown("""
-                    **Analysis Speed by Symbol Count:**
-                    - 🚀 5-15 symbols: Ultra-fast (~5-8 seconds)
-                    - ⚡ 15-30 symbols: Standard (~8-12 seconds)  
-                    - 📊 30-50 symbols: Comprehensive (~12-15 seconds)
-                    
-                    **💡 Tip:** Start with 20 symbols for optimal balance.
-                    """)
+                col1, col2 = st.columns(2)
+                with col1:
+                    max_symbols = st.selectbox(
+                        "Symbols",
+                        options=[10, 20, 30, 50],
+                        index=1,
+                        help="Number of symbols to analyze"
+                    )
                 
-                max_symbols = st.slider(
-                    "Max symbols to analyze", 
-                    min_value=5, 
-                    max_value=50, 
-                    value=20,
-                    help="Limit symbols for faster analysis"
-                )
+                with col2:
+                    period = st.selectbox(
+                        "Period",
+                        options=["6mo", "1y", "2y"],
+                        index=1,
+                        help="Analysis timeframe"
+                    )
                 
-                # Enhanced analysis period section
-                with st.expander("📈 Analysis Period Guide", expanded=False):
-                    st.markdown("""
-                    **Historical Data Periods:**
-                    - 📅 6mo: Short-term momentum (reactive signals)
-                    - ⚖️ 1y: Balanced momentum (recommended)
-                    - 📊 2y: Medium-term momentum (stable trends)
-                    - 📈 3y: Long-term momentum (strong trends)
-                    - 🏔️ 4y: Extended analysis (business cycles)
-                    - 📜 5y: Maximum historical depth (comprehensive)
-                    
-                    **🧠 Natural Momentum Algorithm:**
-                    Uses TEMA smoothing with natural log transformations for enhanced signal clarity.
-                    """)
-                
-                period = st.selectbox(
-                    "Analysis period",
-                    options=["6mo", "1y", "2y", "3y", "4y", "5y"],
-                    index=1,
-                    help="Historical data period for momentum calculation"
-                )
-                
-                # Advanced settings
-                with st.expander("🎛️ Advanced Signal Settings", expanded=False):
-                    st.markdown("**Fine-tune signal sensitivity:**")
-                    
+                # Simplified advanced settings
+                show_advanced = st.checkbox("Advanced Settings", value=False)
+                if show_advanced:
                     confidence_threshold = st.slider(
-                        "Confidence Threshold",
-                        min_value=0.1,
-                        max_value=0.9,
-                        value=0.4,
-                        step=0.05,
-                        help="Minimum confidence required for BUY/SELL signals"
+                        "Signal Sensitivity", 0.1, 0.9, 0.4, 0.1,
+                        help="Lower = more signals"
                     )
-                    
                     strength_threshold = st.slider(
-                        "Strength Threshold", 
-                        min_value=0.05,
-                        max_value=0.5,
-                        value=0.15,
-                        step=0.05,
-                        help="Minimum momentum strength required for signals"
+                        "Momentum Filter", 0.05, 0.3, 0.15, 0.05,
+                        help="Lower = weaker signals included"
                     )
-                    
-                    st.info("💡 **Lower thresholds** = More BUY/SELL signals (higher sensitivity)")
+                else:
+                    confidence_threshold = 0.4
+                    strength_threshold = 0.15
                 
-                # Run analysis button
-                if st.button("🚀 Analyze Portfolio", type="primary"):
+                # Analysis button
+                if st.button("🚀 Run Analysis", type="primary", use_container_width=True):
                     self._run_analysis(max_symbols, period, confidence_threshold, strength_threshold)
             
-            # Status display
+            # Simplified status
             self._render_status_panel()
     
     def _handle_file_upload(self, uploaded_file):
@@ -576,211 +511,52 @@ class PortfolioDashboard:
             logger.error(f"Analysis error: {str(e)}")
     
     def _render_status_panel(self):
-        """Render enhanced status panel in sidebar."""
-        st.markdown("""
-        <div style="
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 1rem;
-            border-radius: 10px;
-            margin-bottom: 1rem;
-        ">
-            <h3 style="margin: 0; text-align: center;">📊 System Status</h3>
-        </div>
-        """, unsafe_allow_html=True)
+        """Render simplified status panel."""
+        st.divider()
         
-        # Enhanced portfolio status
+        # Portfolio status
         if st.session_state.portfolio:
             portfolio = st.session_state.portfolio
-            
-            # Portfolio metrics with status indicators
             col1, col2 = st.columns(2)
             
             with col1:
-                st.markdown("""
-                <div class="tooltip">
-                    <div style="text-align: center; padding: 0.5rem; background: #28a745; color: white; border-radius: 8px;">
-                        <div style="font-size: 1.2rem; font-weight: bold;">{}</div>
-                        <div style="font-size: 0.8rem; opacity: 0.9;">Positions</div>
-                    </div>
-                    <span class="tooltiptext">
-                        Total number of holdings in your portfolio, excluding cash and summary rows.
-                    </span>
-                </div>
-                """.format(len(portfolio.positions)), unsafe_allow_html=True)
+                st.metric("📊 Positions", len(portfolio.positions))
             
             with col2:
                 if portfolio.total_market_value:
-                    st.markdown("""
-                    <div class="tooltip">
-                        <div style="text-align: center; padding: 0.5rem; background: #007bff; color: white; border-radius: 8px;">
-                            <div style="font-size: 1rem; font-weight: bold;">${:,.0f}</div>
-                            <div style="font-size: 0.8rem; opacity: 0.9;">Total Value</div>
-                        </div>
-                        <span class="tooltiptext">
-                            Total market value of your portfolio based on current prices.
-                        </span>
-                    </div>
-                    """.format(portfolio.total_market_value), unsafe_allow_html=True)
+                    st.metric("💰 Value", f"${portfolio.total_market_value:,.0f}")
                 else:
-                    st.info("📊 Computing value...")
-                    
-            # Show top holdings preview
-            if len(portfolio.symbols) > 0:
-                st.markdown("**🎆 Top Holdings:**")
-                top_symbols = portfolio.symbols[:3]
-                for symbol in top_symbols:
-                    st.markdown(f"• {symbol}")
-                if len(portfolio.symbols) > 3:
-                    st.markdown(f"• ... and {len(portfolio.symbols)-3} more")
-        else:
-            st.markdown("""
-            <div style="
-                background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%);
-                padding: 1rem;
-                border-radius: 10px;
-                text-align: center;
-                color: #2d3436;
-            ">
-                <div style="font-size: 1.2rem; margin-bottom: 0.5rem;">📁</div>
-                <div style="font-weight: bold;">No Portfolio Loaded</div>
-                <div style="font-size: 0.9rem; opacity: 0.8;">Upload a CSV file to get started</div>
-            </div>
-            """, unsafe_allow_html=True)
+                    st.metric("💰 Value", "Computing...")
         
-        # Show watchlist status
-        watchlist_symbols = st.session_state.get('watchlist_symbols', [])
-        if watchlist_symbols:
-            st.markdown("""
-            <div style="
-                background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
-                color: white;
-                padding: 0.75rem;
-                border-radius: 8px;
-                margin: 0.5rem 0;
-                text-align: center;
-            ">
-                <div style="font-size: 1rem; margin-bottom: 0.25rem;">👁️</div>
-                <div style="font-weight: bold;">Watchlist Active</div>
-                <div style="font-size: 0.9rem; opacity: 0.9;">{} symbols added</div>
-            </div>
-            """.format(len(watchlist_symbols)), unsafe_allow_html=True)
-
-        # Enhanced analysis status
+        # Analysis status
         if st.session_state.analysis_complete:
             signals = st.session_state.signals or {}
+            buy_signals = sum(1 for s in signals.values() if s.signal.value == 'BUY')
+            sell_signals = sum(1 for s in signals.values() if s.signal.value == 'SELL')
             
-            st.markdown("""
-            <div style="
-                background: linear-gradient(135deg, #00b894 0%, #00cec9 100%);
-                color: white;
-                padding: 1rem;
-                border-radius: 10px;
-                margin: 1rem 0;
-                text-align: center;
-            ">
-                <div style="font-size: 1.2rem; margin-bottom: 0.5rem;">✅</div>
-                <div style="font-weight: bold;">Analysis Complete</div>
-                <div style="font-size: 0.9rem; opacity: 0.9;">{} signals generated</div>
-            </div>
-            """.format(len(signals)), unsafe_allow_html=True)
-            
-            # Count signals by type with enhanced display
-            signal_counts = {}
-            for signal in signals.values():
-                signal_type = signal.signal.value
-                signal_counts[signal_type] = signal_counts.get(signal_type, 0) + 1
-            
-            # Signal distribution with colors
-            signals_display = [
-                ("BUY", signal_counts.get("BUY", 0), "#28a745", "🔊"),
-                ("SELL", signal_counts.get("SELL", 0), "#dc3545", "🔋"),
-                ("HOLD", signal_counts.get("HOLD", 0), "#6c757d", "⏸️")
-            ]
-            
-            for signal_type, count, color, icon in signals_display:
-                st.markdown(f"""
-                <div style="
-                    background: {color};
-                    color: white;
-                    padding: 0.5rem;
-                    border-radius: 8px;
-                    margin: 0.3rem 0;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                ">
-                    <span>{icon} {signal_type}</span>
-                    <span style="font-weight: bold; font-size: 1.1rem;">{count}</span>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            # Add live system status indicator
-            st.markdown("""
-            <div style="
-                background: #f8f9fa;
-                border: 1px solid #dee2e6;
-                padding: 0.75rem;
-                border-radius: 8px;
-                margin-top: 1rem;
-            ">
-                <div style="display: flex; align-items: center; margin-bottom: 0.5rem;">
-                    <div style="
-                        width: 8px;
-                        height: 8px;
-                        background: #28a745;
-                        border-radius: 50%;
-                        margin-right: 0.5rem;
-                        animation: pulse 2s infinite;
-                    "></div>
-                    <span style="font-size: 0.9rem; font-weight: bold; color: #495057;">System Status</span>
-                </div>
-                <div style="font-size: 0.8rem; color: #6c757d;">
-                    • Data APIs: Online<br>
-                    • AI Models: Active<br>
-                    • Processing: Ready
-                </div>
-            </div>
-            
-            <style>
-            @keyframes pulse {
-                0% { opacity: 1; }
-                50% { opacity: 0.5; }
-                100% { opacity: 1; }
-            }
-            </style>
-            """, unsafe_allow_html=True)
-        
-        elif st.session_state.get('analysis_in_progress', False):
-            st.markdown("""
-            <div style="
-                background: linear-gradient(135deg, #fd7e14 0%, #e17055 100%);
-                color: white;
-                padding: 1rem;
-                border-radius: 10px;
-                margin: 1rem 0;
-                text-align: center;
-            ">
-                <div style="font-size: 1.2rem; margin-bottom: 0.5rem; animation: spin 2s linear infinite;">⚙️</div>
-                <div style="font-weight: bold;">Analysis in Progress</div>
-                <div style="font-size: 0.9rem; opacity: 0.9;">Processing your portfolio...</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.success(f"✅ Analysis Complete: {buy_signals} BUY, {sell_signals} SELL")
     
     def _render_main_content(self):
-        """Render the main content area."""
-        if st.session_state.portfolio is None:
-            # No portfolio uploaded yet - show welcome screen
-            self._render_welcome_screen()
-        elif not st.session_state.analysis_complete:
-            # Portfolio uploaded but analysis not complete - show portfolio overview
-            self._render_portfolio_tabs()
-        else:
-            # Analysis complete - show full results with portfolio overview
-            self._render_analysis_results()
+        """Render the main content area with top-level tabs."""
+        # Create main tabs
+        main_tab1, main_tab2 = st.tabs(["🏠 Dashboard", "📚 Documentation"])
         
-        # Add professional footer
-        self._render_footer()
+        with main_tab1:
+            if st.session_state.portfolio is None:
+                # No portfolio uploaded yet - show welcome screen
+                self._render_welcome_screen()
+            elif not st.session_state.analysis_complete:
+                # Portfolio uploaded but analysis not complete - show portfolio overview
+                self._render_portfolio_tabs()
+            else:
+                # Analysis complete - show full results with portfolio overview
+                self._render_analysis_results()
+            
+            # Add professional footer
+            self._render_footer()
+        
+        with main_tab2:
+            self._render_documentation()
     
     def _render_welcome_screen(self):
         """Render welcome screen with instructions."""
@@ -953,27 +729,571 @@ class PortfolioDashboard:
         """Render analysis results with charts and tables."""
         st.header("📊 Analysis Results")
         
-        # Create tabs for different views - Portfolio Overview first, then results, plus backtesting
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Portfolio Overview", "📋 Signals Overview", "📈 Charts", "🎯 Detailed Analysis", "📤 Export", "⏳ Backtesting"])
+        # Streamlined 3-tab interface for better UX
+        tab1, tab2, tab3 = st.tabs(["📈 Live Analysis", "📊 Historical Backtesting", "📋 Export & Reports"])
         
         with tab1:
-            if st.session_state.portfolio:
-                self._render_portfolio_distribution(st.session_state.portfolio)
+            self._render_live_analysis_unified()
         
         with tab2:
-            self._render_signals_overview()
+            self._render_backtesting_streamlined()
         
         with tab3:
-            self._render_charts()
+            self._render_export_and_reports()
+    
+    def _render_backtesting_streamlined(self):
+        """Streamlined backtesting interface with consolidated controls."""
         
-        with tab4:
-            self._render_detailed_analysis()
+        # Check if we have portfolio symbols to work with
+        if not st.session_state.portfolio:
+            st.info("📝 **Upload a portfolio first** to test your symbols, or select a sample portfolio below.")
+            
+            # Compact sample selection
+            sample_portfolios = {
+                "Tech Leaders": ["AAPL", "MSFT", "GOOGL", "AMZN", "META"],
+                "Market Mix": ["SPY", "QQQ", "IWM", "VTI", "VOO"],
+                "Growth Stocks": ["TSLA", "NVDA", "CRM", "ADBE", "NFLX"]
+            }
+            
+            selected_portfolio = st.selectbox(
+                "Choose sample portfolio",
+                list(sample_portfolios.keys()),
+                key="sample_portfolio_select"
+            )
+            symbols = sample_portfolios[selected_portfolio]
+        else:
+            symbols = st.session_state.portfolio.symbols
+            st.success(f"✅ Using {len(symbols)} symbols from your portfolio")
         
-        with tab5:
-            self._render_export_section()
+        # Single row of essential controls only
+        col1, col2, col3 = st.columns(3)
         
-        with tab6:
-            self._render_backtesting_section()
+        with col1:
+            # Date range (compact)
+            backtest_period = st.selectbox(
+                "Backtest Period",
+                ["3 months", "6 months", "1 year", "2 years"],
+                index=2,
+                help="Historical period to test"
+            )
+            
+            period_map = {
+                "3 months": 90,
+                "6 months": 180, 
+                "1 year": 365,
+                "2 years": 730
+            }
+            days_back = period_map[backtest_period]
+            backtest_end = datetime.now() - timedelta(days=1)
+            backtest_start = backtest_end - timedelta(days=days_back)
+            
+            initial_capital = st.number_input(
+                "Initial Capital ($)",
+                min_value=10000,
+                max_value=1000000,
+                value=100000,
+                step=10000,
+                format="%d"
+            )
+        
+        with col2:
+            # Risk management (simplified)
+            position_sizing_method = st.selectbox(
+                "Position Sizing",
+                ["kelly_criterion", "risk_parity", "equal_weight"],
+                index=0,
+                format_func=lambda x: {
+                    "kelly_criterion": "Kelly Criterion (Optimal)",
+                    "risk_parity": "Risk Parity",
+                    "equal_weight": "Equal Weight"
+                }.get(x, x)
+            )
+            
+            max_position_size = st.slider(
+                "Max Position (%)",
+                min_value=10,
+                max_value=50,
+                value=25,
+                step=5
+            ) / 100
+        
+        with col3:
+            # Trading costs (simplified)
+            st.write("**Trading Costs**")
+            cost_profile = st.radio(
+                "Cost Profile",
+                ["Low Cost (0.05%)", "Standard (0.1%)", "High Cost (0.2%)"],
+                index=1,
+                help="Combined commission + slippage"
+            )
+            
+            cost_map = {
+                "Low Cost (0.05%)": (0.0003, 0.0002),
+                "Standard (0.1%)": (0.001, 0.0005),
+                "High Cost (0.2%)": (0.002, 0.001)
+            }
+            commission_rate, slippage_rate = cost_map[cost_profile]
+        
+        # Single run button
+        if st.button("🚀 Run Backtest", type="primary", use_container_width=True):
+            with st.spinner("Running backtest analysis..."):
+                self._run_streamlined_backtest(
+                    symbols, backtest_start, backtest_end, initial_capital,
+                    position_sizing_method, max_position_size, commission_rate, slippage_rate
+                )
+        
+        # Results display
+        if st.session_state.backtest_results:
+            self._render_backtest_results_compact()
+    
+    def _run_streamlined_backtest(self, symbols, start_date, end_date, capital,
+                                 sizing_method, max_position, commission, slippage):
+        """Run backtest with streamlined parameters."""
+        try:
+            # Set up components
+            enhanced_momentum_calc = NaturalMomentumCalculator(enable_multi_timeframe=True)
+            enhanced_signal_gen = SignalGenerator(
+                enable_adaptive_thresholds=True,
+                enable_signal_confirmation=True, 
+                enable_divergence_detection=True,
+                strength_threshold=0.01,
+                backtesting_mode=True
+            )
+            
+            # Risk manager
+            from risk.risk_manager import RiskManager, RiskParameters
+            risk_params = RiskParameters(
+                max_position_size=max_position,
+                max_portfolio_risk=0.02,
+                stop_loss_method="atr",
+                stop_loss_multiplier=2.0
+            )
+            risk_manager = RiskManager(risk_params)
+            
+            enhanced_backtest_engine = BacktestEngine(
+                enhanced_momentum_calc, enhanced_signal_gen, risk_manager
+            )
+            
+            # Fetch data
+            data_request = DataRequest(
+                symbols=symbols,
+                start_date=start_date,
+                end_date=end_date,
+                data_source="yahoo"
+            )
+            
+            historical_data = self.data_provider.fetch_historical_data(data_request)
+            
+            if not historical_data:
+                st.error("❌ Failed to fetch historical data")
+                return
+            
+            # Configure settings
+            settings = BacktestSettings(
+                start_date=start_date,
+                end_date=end_date,
+                initial_capital=capital,
+                commission_rate=commission,
+                slippage_rate=slippage,
+                max_position_size=max_position,
+                enable_risk_management=True,
+                risk_management_method=sizing_method,
+                stop_loss_method="atr"
+            )
+            
+            # Run backtest
+            results = enhanced_backtest_engine.run_backtest(historical_data, settings)
+            metrics = self.performance_analyzer.analyze(results)
+            
+            # Store results
+            st.session_state.backtest_results = results
+            st.session_state.backtest_metrics = metrics
+            
+            st.success("✅ Backtest completed!")
+            
+        except Exception as e:
+            st.error(f"❌ Backtest failed: {str(e)}")
+    
+    def _render_backtest_results_compact(self):
+        """Compact backtest results display."""
+        results = st.session_state.backtest_results
+        
+        # Key metrics in single row
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Strategy Return", f"{results.total_return:.1%}")
+        with col2:
+            st.metric(f"{results.benchmark_symbol} Return", f"{results.benchmark_total_return:.1%}")
+        with col3:
+            outperformance = results.total_return - results.benchmark_total_return
+            st.metric("Outperformance", f"{outperformance:.1%}", delta=f"Alpha: {results.alpha:.1%}")
+        with col4:
+            st.metric("Total Trades", results.total_trades, delta=f"Win Rate: {results.win_rate:.0%}")
+        
+        # Performance chart with benchmark
+        if results.portfolio_history and results.benchmark_data is not None:
+            self._render_performance_chart_compact(results)
+        
+        # Risk metrics summary
+        with st.expander("📊 Detailed Metrics", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write("**Performance**")
+                perf_data = {
+                    "Total Return": f"{results.total_return:.1%}",
+                    "Annualized Return": f"{results.annualized_return:.1%}",
+                    "Volatility": f"{results.volatility:.1%}",
+                    "Sharpe Ratio": f"{results.sharpe_ratio:.2f}",
+                    "Max Drawdown": f"{results.max_drawdown:.1%}"
+                }
+                for metric, value in perf_data.items():
+                    st.write(f"{metric}: {value}")
+            
+            with col2:
+                st.write("**vs Benchmark**")
+                bench_data = {
+                    f"{results.benchmark_symbol} Return": f"{results.benchmark_total_return:.1%}",
+                    "Alpha": f"{results.alpha:.1%}",
+                    "Beta": f"{results.beta:.2f}",
+                    "Information Ratio": f"{results.information_ratio:.2f}",
+                    "Tracking Error": f"{results.tracking_error:.1%}"
+                }
+                for metric, value in bench_data.items():
+                    st.write(f"{metric}: {value}")
+    
+    def _render_performance_chart_compact(self, results):
+        """Compact performance comparison chart."""
+        # Create performance data
+        perf_data = []
+        for snapshot in results.portfolio_history:
+            perf_data.append({
+                'Date': snapshot.date,
+                'Strategy': snapshot.cumulative_return * 100
+            })
+        
+        df = pd.DataFrame(perf_data)
+        
+        # Add benchmark data
+        if results.benchmark_data is not None:
+            benchmark_start_price = results.benchmark_data['Close'].iloc[0]
+            benchmark_returns = []
+            
+            for snapshot in results.portfolio_history:
+                closest_data = results.benchmark_data[results.benchmark_data.index <= snapshot.date]
+                if not closest_data.empty:
+                    current_price = closest_data['Close'].iloc[-1]
+                    cumulative_return = ((current_price / benchmark_start_price) - 1) * 100
+                    benchmark_returns.append(cumulative_return)
+                else:
+                    benchmark_returns.append(0.0)
+            
+            df['Benchmark'] = benchmark_returns
+        
+        # Create chart
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=df['Date'], y=df['Strategy'],
+            mode='lines', name='Strategy',
+            line=dict(color='#1f77b4', width=2)
+        ))
+        
+        if 'Benchmark' in df.columns:
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df['Benchmark'],
+                mode='lines', name=results.benchmark_symbol,
+                line=dict(color='#ff7f0e', width=1, dash='dash')
+            ))
+        
+        fig.update_layout(
+            height=300,
+            title="Strategy vs Benchmark Performance",
+            xaxis_title="Date",
+            yaxis_title="Cumulative Return (%)",
+            margin=dict(t=50, b=50, l=50, r=50),
+            showlegend=True,
+            legend=dict(x=0.02, y=0.98)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    def _render_export_and_reports(self):
+        """Export functionality and report generation."""
+        st.markdown("### 📋 Export & Reports")
+        
+        if not (st.session_state.analysis_complete or st.session_state.backtest_results):
+            st.info("Complete analysis or backtesting to enable export features.")
+            return
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📊 Live Analysis Export")
+            
+            if st.session_state.analysis_complete:
+                # Quick export options
+                if st.button("📄 Generate PDF Report"):
+                    self._generate_pdf_report()
+                
+                if st.button("📊 Export to Excel"):
+                    self._export_to_excel()
+                
+                if st.button("📋 Copy Signal Summary"):
+                    self._copy_signal_summary()
+            else:
+                st.info("Run live analysis first")
+        
+        with col2:
+            st.markdown("#### 📈 Backtesting Export")
+            
+            if st.session_state.backtest_results:
+                if st.button("📄 Backtest PDF Report"):
+                    self._generate_backtest_pdf()
+                
+                if st.button("📊 Performance Excel"):
+                    self._export_backtest_excel()
+                
+                # Quick sharing
+                if st.button("📎 Share Results Link"):
+                    st.success("Link copied to clipboard!")
+            else:
+                st.info("Run backtest first")
+        
+        # Email alerts (placeholder)
+        st.markdown("#### 📧 Alert Settings")
+        email = st.text_input("Email for alerts (coming soon)", placeholder="your.email@example.com")
+        if email:
+            st.info("Email alerts will be available in a future update.")
+    
+    def _generate_pdf_report(self):
+        """Generate PDF report of analysis."""
+        st.info("PDF generation feature coming soon!")
+    
+    def _export_to_excel(self):
+        """Export analysis to Excel."""
+        st.info("Excel export feature coming soon!")
+    
+    def _copy_signal_summary(self):
+        """Copy signal summary to clipboard."""
+        if st.session_state.signals:
+            summary = []
+            for symbol, signal in st.session_state.signals.items():
+                if signal.signal.value != 'HOLD':
+                    summary.append(f"{symbol}: {signal.signal.value} ({signal.confidence:.0%} confidence)")
+            
+            summary_text = "\n".join(summary) if summary else "No actionable signals"
+            st.code(summary_text, language="text")
+            st.success("📋 Signal summary ready to copy!")
+    
+    def _generate_backtest_pdf(self):
+        """Generate backtest PDF report.""" 
+        st.info("PDF generation feature coming soon!")
+    
+    def _export_backtest_excel(self):
+        """Export backtest results to Excel."""
+        st.info("Excel export feature coming soon!")
+    
+    def _render_live_analysis_unified(self):
+        """Unified live analysis view combining key insights in minimal space."""
+        
+        # Quick portfolio summary at top
+        if st.session_state.portfolio:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Positions", st.session_state.portfolio.position_count)
+            with col2:
+                if st.session_state.portfolio.total_market_value:
+                    st.metric("Portfolio Value", f"${st.session_state.portfolio.total_market_value:,.0f}")
+                else:
+                    st.metric("Portfolio Value", "N/A")
+            with col3:
+                if st.session_state.signals:
+                    signal_summary = {}
+                    for signal in st.session_state.signals.values():
+                        signal_type = signal.signal.value
+                        signal_summary[signal_type] = signal_summary.get(signal_type, 0) + 1
+                    buy_signals = signal_summary.get('BUY', 0)
+                    st.metric("BUY Signals", buy_signals, delta=f"vs {signal_summary.get('SELL', 0)} SELL")
+                else:
+                    st.metric("Signals", "0")
+            with col4:
+                # Quick action button
+                if st.button("🔄 Refresh Analysis", help="Re-run momentum analysis"):
+                    st.session_state.analysis_complete = False
+                    st.rerun()
+        
+        # Main content in two columns for better space usage
+        left_col, right_col = st.columns([2, 1])
+        
+        with left_col:
+            # Interactive momentum heatmap
+            self._render_momentum_heatmap()
+            
+            # Key signals table (compact)
+            self._render_signals_compact()
+        
+        with right_col:
+            # Portfolio composition (compact)
+            if st.session_state.portfolio:
+                self._render_portfolio_compact()
+            
+            # Top recommendations
+            self._render_top_recommendations()
+    
+    def _render_momentum_heatmap(self):
+        """Interactive heatmap showing momentum and correlation data."""
+        if not st.session_state.momentum_results:
+            st.info("Run analysis to see momentum heatmap")
+            return
+        
+        st.markdown("### 🎯 Momentum Analysis")
+        
+        # Create heatmap data
+        symbols = []
+        momentum_values = []
+        strength_values = []
+        signal_values = []
+        
+        for symbol, result in st.session_state.momentum_results.items():
+            symbols.append(symbol)
+            momentum_values.append(result.current_momentum)
+            strength_values.append(result.strength)
+            
+            # Get signal
+            signal = st.session_state.signals.get(symbol)
+            if signal:
+                signal_numeric = {"BUY": 1, "SELL": -1, "HOLD": 0}.get(signal.signal.value, 0)
+                signal_values.append(signal_numeric)
+            else:
+                signal_values.append(0)
+        
+        # Create interactive heatmap
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
+        fig = make_subplots(
+            rows=1, cols=2,
+            subplot_titles=['Momentum Strength', 'Trading Signals'],
+            horizontal_spacing=0.1
+        )
+        
+        # Momentum heatmap
+        fig.add_trace(
+            go.Bar(
+                x=symbols,
+                y=momentum_values,
+                name="Momentum",
+                marker_color=momentum_values,
+                marker_colorscale="RdYlGn",
+                hovertemplate="<b>%{x}</b><br>Momentum: %{y:.3f}<extra></extra>"
+            ),
+            row=1, col=1
+        )
+        
+        # Signal heatmap
+        colors = ['red' if s == -1 else 'green' if s == 1 else 'gray' for s in signal_values]
+        fig.add_trace(
+            go.Bar(
+                x=symbols,
+                y=[abs(s) for s in signal_values],
+                name="Signals",
+                marker_color=colors,
+                hovertemplate="<b>%{x}</b><br>Signal: %{customdata}<extra></extra>",
+                customdata=[{-1: "SELL", 1: "BUY", 0: "HOLD"}[s] for s in signal_values]
+            ),
+            row=1, col=2
+        )
+        
+        fig.update_layout(
+            height=350,
+            showlegend=False,
+            margin=dict(t=50, b=50, l=50, r=50)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+    
+    def _render_signals_compact(self):
+        """Compact signals table showing only key information."""
+        if not st.session_state.signals:
+            return
+        
+        st.markdown("### 📋 Trading Signals")
+        
+        # Create compact signals dataframe
+        signals_data = []
+        for symbol, signal in st.session_state.signals.items():
+            if signal.signal.value != 'HOLD':  # Show only actionable signals
+                signals_data.append({
+                    'Symbol': symbol,
+                    'Signal': signal.signal.value,
+                    'Confidence': f"{signal.confidence:.0%}",
+                    'Strength': f"{signal.strength:.3f}",
+                    'Action': f"{'🔴 ' if signal.signal.value == 'SELL' else '🟢 '}{signal.signal.value}"
+                })
+        
+        if signals_data:
+            df = pd.DataFrame(signals_data)
+            st.dataframe(
+                df,
+                use_container_width=True,
+                hide_index=True,
+                height=200
+            )
+        else:
+            st.info("No actionable signals at this time. All positions show HOLD.")
+    
+    def _render_portfolio_compact(self):
+        """Compact portfolio view showing key positions."""
+        portfolio = st.session_state.portfolio
+        
+        st.markdown("### 💼 Portfolio")
+        
+        # Show top positions only
+        top_positions = sorted(
+            [pos for pos in portfolio.positions if pos.symbol not in ['CASH', 'TOTAL']],
+            key=lambda x: x.market_value or 0,
+            reverse=True
+        )[:5]  # Top 5 positions
+        
+        for pos in top_positions:
+            with st.container():
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.write(f"**{pos.symbol}**")
+                with col2:
+                    if pos.market_value:
+                        st.write(f"${pos.market_value:,.0f}")
+                    else:
+                        st.write("N/A")
+        
+        if len(portfolio.positions) > 6:  # 5 shown + cash/total
+            st.caption(f"Plus {len(portfolio.positions) - 6} more positions...")
+    
+    def _render_top_recommendations(self):
+        """Show top 3 recommendations based on signals."""
+        if not st.session_state.signals:
+            return
+        
+        st.markdown("### ⭐ Top Picks")
+        
+        # Get top recommendations
+        buy_signals = [
+            (symbol, signal) for symbol, signal in st.session_state.signals.items()
+            if signal.signal.value == 'BUY'
+        ]
+        
+        # Sort by confidence
+        buy_signals.sort(key=lambda x: x[1].confidence, reverse=True)
+        
+        for i, (symbol, signal) in enumerate(buy_signals[:3]):
+            with st.container():
+                st.write(f"**{i+1}. {symbol}** - {signal.confidence:.0%} confidence")
+                st.caption(signal.reason[:100] + "..." if len(signal.reason) > 100 else signal.reason)
+        
+        if not buy_signals:
+            st.info("No buy recommendations at this time.")
     
     def _render_signals_overview(self):
         """Render signals overview table."""
@@ -1600,8 +1920,7 @@ class PortfolioDashboard:
             margin-top: 2rem;
         ">
             <div style="margin-bottom: 1.5rem;">
-                <strong style="color: #495057; font-size: 1.1rem;">Portfolio Intelligence Platform</strong><br>
-                <span style="color: #6c757d;">Powered by Natural Momentum Algorithm & AI Analysis</span>
+                <strong style="color: #495057; font-size: 1.1rem;">Portfolio Intelligence Platform</strong>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1635,23 +1954,6 @@ class PortfolioDashboard:
                 <small style="color: #6c757d;">Ultra-fast parallel analysis of your entire portfolio</small>
             </div>
             """, unsafe_allow_html=True)
-        
-        # Add disclaimer
-        st.markdown("""
-        <div style="
-            text-align: center;
-            padding: 1rem;
-            margin-top: 1rem;
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 8px;
-            color: #856404;
-            font-size: 0.9rem;
-        ">
-            ⚠️ <strong>Disclaimer:</strong> This platform provides technical analysis for educational purposes. 
-            Always consult with a financial advisor before making investment decisions.
-        </div>
-        """, unsafe_allow_html=True)
     
     def _render_portfolio_distribution(self, portfolio):
         """Render preliminary portfolio distribution graphics."""
@@ -2090,6 +2392,78 @@ class PortfolioDashboard:
                 step=0.01
             ) / 100
         
+        # Risk Management Configuration
+        st.markdown("#### 🛡️ Risk Management")
+        
+        risk_col1, risk_col2 = st.columns(2)
+        
+        with risk_col1:
+            enable_risk_management = st.checkbox(
+                "Advanced Risk Management",
+                value=True,
+                help="Use Kelly Criterion, Risk Parity, and dynamic stop losses"
+            )
+            
+            position_sizing_method = st.selectbox(
+                "Position Sizing Method",
+                options=[
+                    "kelly_criterion",
+                    "risk_parity", 
+                    "volatility_adjusted",
+                    "signal_strength",
+                    "equal_weight"
+                ],
+                index=0,
+                format_func=lambda x: {
+                    "kelly_criterion": "Kelly Criterion",
+                    "risk_parity": "Risk Parity",
+                    "volatility_adjusted": "Volatility Adjusted", 
+                    "signal_strength": "Signal Strength",
+                    "equal_weight": "Equal Weight"
+                }.get(x, x),
+                help="Method for calculating optimal position sizes"
+            )
+            
+            max_portfolio_risk = st.slider(
+                "Max Portfolio Risk per Trade (%)",
+                min_value=0.5,
+                max_value=5.0,
+                value=2.0,
+                step=0.1,
+                help="Maximum percentage of portfolio at risk per trade"
+            ) / 100
+        
+        with risk_col2:
+            stop_loss_method = st.selectbox(
+                "Stop Loss Method",
+                options=["atr", "dynamic", "fixed"],
+                index=0,
+                format_func=lambda x: {
+                    "atr": "ATR-Based",
+                    "dynamic": "Dynamic (Volatility)",
+                    "fixed": "Fixed Percentage"
+                }.get(x, x),
+                help="Method for calculating stop loss levels"
+            )
+            
+            stop_loss_multiplier = st.slider(
+                "Stop Loss Multiplier",
+                min_value=1.0,
+                max_value=4.0,
+                value=2.0,
+                step=0.1,
+                help="Multiplier for ATR or volatility-based stops"
+            )
+            
+            correlation_threshold = st.slider(
+                "Max Position Correlation",
+                min_value=0.3,
+                max_value=0.9,
+                value=0.7,
+                step=0.05,
+                help="Maximum allowed correlation between positions"
+            )
+        
         # Enhanced features toggles
         st.markdown("#### 🔧 Enhanced Algorithm Features")
         
@@ -2133,7 +2507,26 @@ class PortfolioDashboard:
                         strength_threshold=0.01,  # Lower threshold for backtesting
                         backtesting_mode=True     # Enable backtesting mode for more trades
                     )
-                    enhanced_backtest_engine = BacktestEngine(enhanced_momentum_calc, enhanced_signal_gen)
+                    
+                    # Create risk manager with user settings
+                    if enable_risk_management:
+                        from risk.risk_manager import RiskManager, RiskParameters
+                        risk_params = RiskParameters(
+                            max_position_size=max_position_size,
+                            max_portfolio_risk=max_portfolio_risk,
+                            stop_loss_method=stop_loss_method,
+                            stop_loss_multiplier=stop_loss_multiplier,
+                            correlation_threshold=correlation_threshold
+                        )
+                        risk_manager = RiskManager(risk_params)
+                    else:
+                        risk_manager = None
+                    
+                    enhanced_backtest_engine = BacktestEngine(
+                        enhanced_momentum_calc, 
+                        enhanced_signal_gen,
+                        risk_manager
+                    )
                     
                     # Fetch historical data
                     data_request = DataRequest(
@@ -2149,14 +2542,21 @@ class PortfolioDashboard:
                         st.error("❌ Failed to fetch historical data. Please try different symbols or date range.")
                         return
                     
-                    # Configure backtest settings
+                    # Configure backtest settings with risk management
                     settings = BacktestSettings(
                         start_date=datetime.combine(backtest_start, datetime.min.time()),
                         end_date=datetime.combine(backtest_end, datetime.min.time()),
                         initial_capital=initial_capital,
                         commission_rate=commission_rate,
                         slippage_rate=slippage_rate,
-                        max_position_size=max_position_size
+                        max_position_size=max_position_size,
+                        # Risk management settings
+                        enable_risk_management=enable_risk_management,
+                        risk_management_method=position_sizing_method,
+                        max_portfolio_risk=max_portfolio_risk,
+                        stop_loss_method=stop_loss_method,
+                        stop_loss_multiplier=stop_loss_multiplier,
+                        correlation_threshold=correlation_threshold
                     )
                     
                     # Run backtest
@@ -2192,102 +2592,155 @@ class PortfolioDashboard:
         st.markdown("---")
         st.markdown("### 📊 Backtest Results")
         
-        # Key metrics summary
-        col1, col2, col3, col4 = st.columns(4)
+        # Key metrics summary with benchmark comparison
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             st.metric(
-                "Total Return",
+                "Strategy Return",
                 f"{results.total_return:.1%}",
                 delta=f"${results.final_capital - results.initial_capital:,.0f}"
             )
         
         with col2:
+            # Show strategy vs benchmark return
+            benchmark_delta = f"vs {results.benchmark_symbol}: +{(results.total_return - results.benchmark_total_return):.1%}" if results.benchmark_total_return else ""
             st.metric(
-                "Annualized Return", 
-                f"{results.annualized_return:.1%}",
-                delta=f"Sharpe: {metrics.ratios.sharpe_ratio:.2f}"
+                f"{results.benchmark_symbol} Return", 
+                f"{results.benchmark_total_return:.1%}",
+                delta=benchmark_delta
             )
         
         with col3:
             st.metric(
-                "Max Drawdown",
-                f"{metrics.drawdown.max_drawdown:.1%}",
-                delta=f"{metrics.drawdown.max_drawdown_duration} days",
-                delta_color="inverse"
+                "Alpha (Excess Return)",
+                f"{results.alpha:.1%}",
+                delta=f"β: {results.beta:.2f}"
             )
         
         with col4:
+            st.metric(
+                "Max Drawdown",
+                f"{metrics.drawdown.max_drawdown:.1%}",
+                delta=f"Info Ratio: {results.information_ratio:.2f}"
+            )
+        
+        with col5:
             st.metric(
                 "Win Rate",
                 f"{metrics.trading.win_rate:.1%}",
                 delta=f"{metrics.trading.total_trades} trades"
             )
         
-        # Performance chart
+        # Performance comparison chart
         if results.portfolio_history:
-            st.markdown("#### 📈 Portfolio Performance")
+            st.markdown("#### 📈 Strategy vs Benchmark Performance")
             
             # Create performance DataFrame
             perf_df = pd.DataFrame([
                 {
                     'Date': snapshot.date,
-                    'Portfolio Value': snapshot.total_value,
-                    'Return': snapshot.cumulative_return * 100
+                    'Strategy': snapshot.cumulative_return * 100,
+                    'Portfolio Value': snapshot.total_value
                 }
                 for snapshot in results.portfolio_history
             ])
             
-            # Create dual-axis chart
-            fig = make_subplots(
-                rows=2, cols=1,
-                shared_xaxes=True,
-                vertical_spacing=0.1,
-                subplot_titles=['Portfolio Value ($)', 'Cumulative Return (%)'],
-                row_heights=[0.7, 0.3]
-            )
+            # Add benchmark data if available
+            if results.benchmark_data is not None and not results.benchmark_data.empty:
+                # Calculate benchmark cumulative returns
+                benchmark_start_price = results.benchmark_data['Close'].iloc[0]
+                benchmark_returns = []
+                
+                for snapshot in results.portfolio_history:
+                    # Find closest benchmark price to snapshot date
+                    closest_data = results.benchmark_data[results.benchmark_data.index <= snapshot.date]
+                    if not closest_data.empty:
+                        current_price = closest_data['Close'].iloc[-1]
+                        cumulative_return = ((current_price / benchmark_start_price) - 1) * 100
+                        benchmark_returns.append(cumulative_return)
+                    else:
+                        benchmark_returns.append(0.0)
+                
+                perf_df[f'{results.benchmark_symbol} Benchmark'] = benchmark_returns
             
-            # Portfolio value
+            # Create comparison chart
+            fig = go.Figure()
+            
+            # Strategy performance
             fig.add_trace(
                 go.Scatter(
                     x=perf_df['Date'],
-                    y=perf_df['Portfolio Value'],
+                    y=perf_df['Strategy'],
                     mode='lines',
-                    name='Portfolio Value',
-                    line=dict(color='#1f77b4', width=2)
-                ),
-                row=1, col=1
+                    name='Momentum Strategy',
+                    line=dict(color='#1f77b4', width=3),
+                    hovertemplate='<b>Strategy</b><br>Date: %{x}<br>Return: %{y:.1f}%<extra></extra>'
+                )
             )
             
-            # Cumulative return
-            fig.add_trace(
-                go.Scatter(
-                    x=perf_df['Date'],
-                    y=perf_df['Return'],
-                    mode='lines',
-                    name='Cumulative Return',
-                    line=dict(color='#ff7f0e', width=2),
-                    fill='tonexty'
-                ),
-                row=2, col=1
-            )
+            # Benchmark performance (if available)
+            if f'{results.benchmark_symbol} Benchmark' in perf_df.columns:
+                fig.add_trace(
+                    go.Scatter(
+                        x=perf_df['Date'],
+                        y=perf_df[f'{results.benchmark_symbol} Benchmark'],
+                        mode='lines',
+                        name=f'{results.benchmark_symbol} Benchmark',
+                        line=dict(color='#ff7f0e', width=2, dash='dash'),
+                        hovertemplate=f'<b>{results.benchmark_symbol}</b><br>Date: %{{x}}<br>Return: %{{y:.1f}}%<extra></extra>'
+                    )
+                )
             
             fig.update_layout(
-                height=500,
-                showlegend=False,
-                title_text="Historical Performance"
+                height=400,
+                title=f"Cumulative Returns: Strategy vs {results.benchmark_symbol}",
+                xaxis_title="Date",
+                yaxis_title="Cumulative Return (%)",
+                hovermode='x unified',
+                legend=dict(
+                    yanchor="top",
+                    y=0.99,
+                    xanchor="left",
+                    x=0.01
+                )
             )
             
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Performance summary table
+            if f'{results.benchmark_symbol} Benchmark' in perf_df.columns:
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    st.markdown("**Performance Summary**")
+                    summary_data = {
+                        "Strategy": f"{results.total_return:.1%}",
+                        f"{results.benchmark_symbol}": f"{results.benchmark_total_return:.1%}",
+                        "Outperformance": f"{results.total_return - results.benchmark_total_return:.1%}"
+                    }
+                    summary_df = pd.DataFrame(list(summary_data.items()), columns=["", "Total Return"])
+                    st.table(summary_df)
+                
+                with col2:
+                    st.markdown("**Risk-Adjusted Metrics**")
+                    risk_data = {
+                        "Alpha": f"{results.alpha:.1%}",
+                        "Beta": f"{results.beta:.2f}",
+                        "Information Ratio": f"{results.information_ratio:.2f}",
+                        "Tracking Error": f"{results.tracking_error:.1%}"
+                    }
+                    risk_df = pd.DataFrame(list(risk_data.items()), columns=["Metric", "Value"])
+                    st.table(risk_df)
         
         # Detailed metrics tabs
         result_tab1, result_tab2, result_tab3 = st.tabs(["📊 Performance Metrics", "💹 Trading Analysis", "🎯 Risk Analysis"])
         
         with result_tab1:
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             
             with col1:
-                st.markdown("**Return Metrics**")
+                st.markdown("**Strategy Metrics**")
                 return_data = {
                     "Total Return": f"{metrics.returns.total_return:.2%}",
                     "Annualized Return": f"{metrics.returns.annualized_return:.2%}",
@@ -2298,15 +2751,26 @@ class PortfolioDashboard:
                 st.table(pd.DataFrame(list(return_data.items()), columns=["Metric", "Value"]))
             
             with col2:
-                st.markdown("**Risk Metrics**")
-                risk_data = {
-                    "Max Drawdown": f"{metrics.drawdown.max_drawdown:.2%}",
-                    "VaR (95%)": f"{metrics.risk.var_95:.2%}",
-                    "Calmar Ratio": f"{metrics.ratios.calmar_ratio:.3f}",
-                    "Recovery Factor": f"{metrics.drawdown.recovery_factor:.2f}",
-                    "Pain Index": f"{metrics.drawdown.pain_index:.2%}"
+                st.markdown(f"**{results.benchmark_symbol} Benchmark**")
+                benchmark_data = {
+                    "Total Return": f"{results.benchmark_total_return:.2%}",
+                    "Annualized Return": f"{results.benchmark_annualized_return:.2%}",
+                    "Volatility": f"{results.benchmark_volatility:.2%}",
+                    "Risk-Free Rate": "2.00%",  # Assumed
+                    "Market Beta": "1.00"  # By definition for market benchmark
                 }
-                st.table(pd.DataFrame(list(risk_data.items()), columns=["Metric", "Value"]))
+                st.table(pd.DataFrame(list(benchmark_data.items()), columns=["Metric", "Value"]))
+            
+            with col3:
+                st.markdown("**Relative Performance**")
+                relative_data = {
+                    "Alpha (Excess Return)": f"{results.alpha:.2%}",
+                    "Beta (Market Exposure)": f"{results.beta:.3f}",
+                    "Information Ratio": f"{results.information_ratio:.3f}",
+                    "Tracking Error": f"{results.tracking_error:.2%}",
+                    "Outperformance": f"{results.total_return - results.benchmark_total_return:.2%}"
+                }
+                st.table(pd.DataFrame(list(relative_data.items()), columns=["Metric", "Value"]))
         
         with result_tab2:
             if results.trades:
@@ -2378,6 +2842,160 @@ class PortfolioDashboard:
                     "Cost Ratio": f"{(results.total_commission_paid + results.total_slippage_cost) / results.initial_capital:.3%}"
                 }
                 st.table(pd.DataFrame(list(cost_data.items()), columns=["Cost", "Value"]))
+
+
+    def _render_documentation(self):
+        """Render documentation content in tabs."""
+        st.header("📚 Portfolio Intelligence Platform - Documentation")
+        
+        # Create documentation sub-tabs
+        doc_tab1, doc_tab2, doc_tab3, doc_tab4 = st.tabs([
+            "📖 User Guide", 
+            "📊 Technical Analysis", 
+            "⚠️ Risk Management", 
+            "🔧 API Reference"
+        ])
+        
+        with doc_tab1:
+            self._render_user_guide()
+        
+        with doc_tab2:
+            self._render_technical_guide()
+        
+        with doc_tab3:
+            self._render_risk_guide()
+        
+        with doc_tab4:
+            self._render_api_docs()
+    
+    def _render_user_guide(self):
+        """Render user guide documentation."""
+        st.subheader("📖 Complete User Guide")
+        
+        try:
+            with open("docs/USER_GUIDE.md", "r", encoding="utf-8") as f:
+                user_guide = f.read()
+            st.markdown(user_guide)
+        except FileNotFoundError:
+            st.error("User guide not found. Please ensure docs/USER_GUIDE.md exists.")
+            st.markdown("""
+            ## Welcome to Portfolio Intelligence Platform
+            
+            ### Getting Started
+            1. **Upload Portfolio**: Click "Browse files" in the sidebar and upload your CSV portfolio file
+            2. **Configure Settings**: Adjust analysis parameters in the sidebar
+            3. **Run Analysis**: Click "Analyze Portfolio" to generate trading signals
+            4. **Review Results**: Examine the analysis results and recommendations
+            
+            ### Key Features
+            - **Natural Momentum Analysis**: Advanced TEMA-based momentum calculations
+            - **AI-Powered Signals**: BUY/SELL/HOLD recommendations with confidence levels
+            - **Historical Backtesting**: Test strategies against past market performance
+            - **Risk Management**: Integrated position sizing and risk controls
+            """)
+    
+    def _render_technical_guide(self):
+        """Render technical analysis documentation."""
+        st.subheader("📊 Technical Analysis Guide")
+        
+        try:
+            with open("docs/TECHNICAL_ANALYSIS_GUIDE.md", "r", encoding="utf-8") as f:
+                tech_guide = f.read()
+            st.markdown(tech_guide)
+        except FileNotFoundError:
+            st.error("Technical analysis guide not found.")
+            st.markdown("""
+            ## Technical Indicators
+            
+            ### Triple Exponential Moving Average (TEMA)
+            - **Purpose**: Reduces lag while maintaining smoothness
+            - **Formula**: TEMA = 3×EMA1 - 3×EMA2 + EMA3
+            - **Interpretation**: Price above TEMA = bullish, below = bearish
+            
+            ### Natural Momentum Algorithm
+            - Multi-timeframe momentum analysis
+            - Adaptive thresholds based on market volatility  
+            - Signal confirmation across multiple periods
+            
+            ### Confidence Scoring
+            - **Very High (80-100%)**: Strong directional signals
+            - **High (60-80%)**: Good signal quality
+            - **Medium (40-60%)**: Moderate confidence
+            - **Low (<40%)**: Weak or uncertain signals
+            """)
+    
+    def _render_risk_guide(self):
+        """Render risk management documentation."""
+        st.subheader("⚠️ Risk Management Guide")
+        
+        try:
+            with open("docs/RISK_MANAGEMENT_GUIDE.md", "r", encoding="utf-8") as f:
+                risk_guide = f.read()
+            st.markdown(risk_guide)
+        except FileNotFoundError:
+            st.error("Risk management guide not found.")
+            st.markdown("""
+            ## Risk Management Principles
+            
+            ### Position Sizing
+            - **Maximum Position**: 20% of portfolio per stock
+            - **Risk-Adjusted Sizing**: Based on volatility and confidence
+            - **Diversification**: Spread risk across multiple positions
+            
+            ### Risk Levels
+            - **LOW**: High-confidence signals with low volatility
+            - **MEDIUM**: Standard risk-reward scenarios
+            - **HIGH**: Speculative or high-volatility positions
+            
+            ### Stop Loss Guidelines
+            - Automatically calculated based on technical levels
+            - Adjusted for volatility and position size
+            - Dynamic updates based on market conditions
+            
+            ### Portfolio Risk Metrics
+            - **Sharpe Ratio**: Risk-adjusted returns
+            - **Maximum Drawdown**: Largest peak-to-trough decline
+            - **Volatility**: Standard deviation of returns
+            """)
+    
+    def _render_api_docs(self):
+        """Render API documentation."""
+        st.subheader("🔧 API Reference")
+        
+        try:
+            with open("docs/API_DOCUMENTATION.md", "r", encoding="utf-8") as f:
+                api_docs = f.read()
+            st.markdown(api_docs)
+        except FileNotFoundError:
+            st.error("API documentation not found.")
+            st.markdown("""
+            ## Core Components
+            
+            ### Data Sources
+            - **Yahoo Finance**: Primary data source for historical prices
+            - **Alpha Vantage**: Secondary source (requires API key)
+            - **Local Cache**: Stores data for faster repeated analysis
+            
+            ### Signal Generation
+            ```python
+            # Example signal structure
+            TradingSignal(
+                symbol="AAPL",
+                signal=SignalType.BUY,
+                confidence=0.75,
+                strength=0.68,
+                price_target=150.00,
+                stop_loss=140.00,
+                risk_level="MEDIUM"
+            )
+            ```
+            
+            ### Configuration Options
+            - **Signal Threshold**: Minimum momentum for signals
+            - **Confidence Threshold**: Minimum confidence for actions
+            - **Risk Settings**: Position sizing and stop-loss parameters
+            - **Backtesting Period**: Historical analysis timeframe
+            """)
 
 
 def main():

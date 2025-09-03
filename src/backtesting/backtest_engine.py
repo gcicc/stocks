@@ -14,6 +14,7 @@ from enum import Enum
 from core.momentum_calculator import NaturalMomentumCalculator, MomentumResult
 from core.signal_generator import SignalGenerator, TradingSignal, SignalType
 from core.data_manager import MarketData
+from risk.risk_manager import RiskManager, RiskParameters, PositionSizingMethod
 from utils.config import config
 
 logger = logging.getLogger(__name__)
@@ -33,12 +34,20 @@ class BacktestSettings:
     initial_capital: float = 100000.0
     commission_rate: float = 0.001  # 0.1% per trade
     slippage_rate: float = 0.0005   # 0.05% slippage
-    position_size_method: str = "equal_weight"  # 'equal_weight', 'risk_parity', 'signal_strength'
+    position_size_method: str = "equal_weight"  # 'equal_weight', 'kelly_criterion', 'risk_parity', 'volatility_adjusted', 'signal_strength'
     max_position_size: float = 0.2  # Maximum 20% per position
     rebalance_frequency: str = "daily"  # 'daily', 'weekly', 'monthly'
     enable_short_selling: bool = False
     stop_loss_pct: Optional[float] = None  # Global stop loss if specified
     take_profit_pct: Optional[float] = None  # Global take profit if specified
+    
+    # Advanced risk management settings
+    enable_risk_management: bool = True  # Use advanced risk management
+    risk_management_method: str = "kelly_criterion"  # Method for risk manager
+    max_portfolio_risk: float = 0.02  # Maximum 2% portfolio risk per trade
+    stop_loss_method: str = "atr"  # 'fixed', 'atr', 'dynamic'
+    stop_loss_multiplier: float = 2.0  # Multiplier for ATR-based stops
+    correlation_threshold: float = 0.7  # Maximum correlation between positions
 
 
 @dataclass
@@ -107,6 +116,17 @@ class BacktestResults:
     total_commission_paid: float = 0.0
     total_slippage_cost: float = 0.0
     
+    # Benchmark comparison metrics
+    benchmark_symbol: str = "SPY"  # Default to S&P 500 ETF
+    benchmark_data: Optional[pd.DataFrame] = None
+    benchmark_total_return: float = 0.0
+    benchmark_annualized_return: float = 0.0
+    benchmark_volatility: float = 0.0
+    alpha: float = 0.0  # Excess return over benchmark
+    beta: float = 0.0   # Correlation with benchmark
+    information_ratio: float = 0.0  # Risk-adjusted excess return
+    tracking_error: float = 0.0  # Volatility of excess returns
+    
     @property
     def summary_stats(self) -> Dict[str, Any]:
         """Get summary statistics as dictionary."""
@@ -136,9 +156,11 @@ class BacktestEngine:
     
     def __init__(self, 
                  momentum_calculator: NaturalMomentumCalculator,
-                 signal_generator: SignalGenerator):
+                 signal_generator: SignalGenerator,
+                 risk_manager: Optional[RiskManager] = None):
         self.momentum_calculator = momentum_calculator
         self.signal_generator = signal_generator
+        self.risk_manager = risk_manager or RiskManager()
         
         # Performance tracking
         self.current_capital = 0.0
@@ -392,6 +414,92 @@ class BacktestEngine:
         
         return executed_trades
     
+    def _execute_buy_order_with_risk_management(self,
+                                              symbol: str,
+                                              quantity: int,
+                                              price: float,
+                                              date: datetime,
+                                              signal: TradingSignal,
+                                              settings: BacktestSettings,
+                                              position_size: 'PositionSize') -> Optional[Trade]:
+        """Execute buy order with advanced risk management."""
+        from risk.risk_manager import PositionSize
+        
+        if quantity <= 0:
+            return None
+        
+        # Calculate costs
+        gross_amount = quantity * price
+        slippage_cost = gross_amount * settings.slippage_rate
+        commission = gross_amount * settings.commission_rate
+        total_cost = gross_amount + slippage_cost + commission
+        
+        # Check if we have enough cash
+        if total_cost > self.cash:
+            # Adjust quantity to available cash
+            available_amount = self.cash - commission - slippage_cost
+            if available_amount > 0:
+                quantity = int(available_amount / (price * (1 + settings.slippage_rate)))
+                if quantity <= 0:
+                    return None
+                # Recalculate costs
+                gross_amount = quantity * price
+                slippage_cost = gross_amount * settings.slippage_rate
+                commission = gross_amount * settings.commission_rate
+                total_cost = gross_amount + slippage_cost + commission
+            else:
+                return None
+        
+        # Execute trade
+        self.cash -= total_cost
+        
+        return Trade(
+            symbol=symbol,
+            entry_date=date,
+            order_type=OrderType.BUY,
+            entry_price=price,
+            quantity=quantity,
+            commission_paid=commission,
+            slippage_cost=slippage_cost,
+            signal_confidence=signal.confidence,
+            signal_strength=signal.strength
+        )
+    
+    def _execute_sell_order_with_risk_management(self,
+                                               symbol: str,
+                                               quantity: int,
+                                               price: float,
+                                               date: datetime,
+                                               signal: TradingSignal,
+                                               settings: BacktestSettings,
+                                               position_size: 'PositionSize') -> Optional[Trade]:
+        """Execute sell order with advanced risk management."""
+        from risk.risk_manager import PositionSize
+        
+        if quantity <= 0:
+            return None
+        
+        # Calculate proceeds
+        gross_amount = quantity * price
+        slippage_cost = gross_amount * settings.slippage_rate
+        commission = gross_amount * settings.commission_rate
+        net_proceeds = gross_amount - slippage_cost - commission
+        
+        # Add proceeds to cash
+        self.cash += net_proceeds
+        
+        return Trade(
+            symbol=symbol,
+            entry_date=date,
+            order_type=OrderType.SELL,
+            entry_price=price,
+            quantity=quantity,
+            commission_paid=commission,
+            slippage_cost=slippage_cost,
+            signal_confidence=signal.confidence,
+            signal_strength=signal.strength
+        )
+    
     def _calculate_position_size(self, 
                                signal: TradingSignal,
                                price: float,
@@ -587,6 +695,11 @@ class BacktestEngine:
         total_commission = sum(trade.commission_paid for trade in trades)
         total_slippage = sum(trade.slippage_cost for trade in trades)
         
+        # Calculate benchmark metrics
+        benchmark_metrics = self._calculate_benchmark_metrics(
+            portfolio_history, settings.start_date, settings.end_date
+        )
+        
         return BacktestResults(
             settings=settings,
             start_date=settings.start_date,
@@ -609,7 +722,17 @@ class BacktestEngine:
             portfolio_history=portfolio_history,
             trades=trades,
             total_commission_paid=total_commission,
-            total_slippage_cost=total_slippage
+            total_slippage_cost=total_slippage,
+            # Benchmark metrics
+            benchmark_symbol=benchmark_metrics['symbol'],
+            benchmark_data=benchmark_metrics['data'],
+            benchmark_total_return=benchmark_metrics['total_return'],
+            benchmark_annualized_return=benchmark_metrics['annualized_return'],
+            benchmark_volatility=benchmark_metrics['volatility'],
+            alpha=benchmark_metrics['alpha'],
+            beta=benchmark_metrics['beta'],
+            information_ratio=benchmark_metrics['information_ratio'],
+            tracking_error=benchmark_metrics['tracking_error']
         )
     
     def _calculate_drawdown_metrics(self, 
@@ -674,3 +797,168 @@ class BacktestEngine:
             'avg_loss': avg_loss,
             'profit_factor': profit_factor
         }
+    
+    def _calculate_benchmark_metrics(self, 
+                                   portfolio_history: List[PortfolioSnapshot],
+                                   start_date: datetime,
+                                   end_date: datetime,
+                                   benchmark_symbol: str = "SPY") -> Dict[str, any]:
+        """Calculate benchmark performance and relative metrics."""
+        
+        try:
+            # Import data provider here to avoid circular imports
+            from backtesting.data_provider import DataProvider, DataRequest
+            
+            # Fetch benchmark data
+            data_provider = DataProvider()
+            benchmark_request = DataRequest(
+                symbols=[benchmark_symbol],
+                start_date=start_date,
+                end_date=end_date,
+                data_source="yahoo"
+            )
+            
+            benchmark_data_dict = data_provider.fetch_historical_data(benchmark_request)
+            
+            if not benchmark_data_dict or benchmark_symbol not in benchmark_data_dict:
+                logger.warning(f"Failed to fetch benchmark data for {benchmark_symbol}")
+                return self._empty_benchmark_metrics(benchmark_symbol)
+            
+            benchmark_data = benchmark_data_dict[benchmark_symbol]
+            
+            # Calculate benchmark returns
+            benchmark_returns = self._calculate_benchmark_returns(benchmark_data, portfolio_history)
+            
+            if not benchmark_returns:
+                return self._empty_benchmark_metrics(benchmark_symbol)
+            
+            # Calculate portfolio returns for comparison
+            portfolio_returns = self._extract_portfolio_returns(portfolio_history)
+            
+            # Calculate benchmark performance metrics
+            benchmark_total_return = (benchmark_data['Close'].iloc[-1] / benchmark_data['Close'].iloc[0]) - 1
+            days = len(benchmark_data)
+            years = days / 365.25
+            benchmark_annualized_return = (1 + benchmark_total_return) ** (1 / years) - 1 if years > 0 else benchmark_total_return
+            
+            benchmark_daily_returns = benchmark_data['Close'].pct_change().dropna()
+            benchmark_volatility = benchmark_daily_returns.std() * np.sqrt(252)  # Annualized
+            
+            # Calculate relative performance metrics
+            alpha, beta, information_ratio, tracking_error = self._calculate_relative_metrics(
+                portfolio_returns, benchmark_returns
+            )
+            
+            return {
+                'symbol': benchmark_symbol,
+                'data': benchmark_data,
+                'total_return': benchmark_total_return,
+                'annualized_return': benchmark_annualized_return,
+                'volatility': benchmark_volatility,
+                'alpha': alpha,
+                'beta': beta,
+                'information_ratio': information_ratio,
+                'tracking_error': tracking_error
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating benchmark metrics: {str(e)}")
+            return self._empty_benchmark_metrics(benchmark_symbol)
+    
+    def _empty_benchmark_metrics(self, benchmark_symbol: str = "SPY") -> Dict[str, any]:
+        """Return empty benchmark metrics when calculation fails."""
+        return {
+            'symbol': benchmark_symbol,
+            'data': None,
+            'total_return': 0.0,
+            'annualized_return': 0.0,
+            'volatility': 0.0,
+            'alpha': 0.0,
+            'beta': 0.0,
+            'information_ratio': 0.0,
+            'tracking_error': 0.0
+        }
+    
+    def _calculate_benchmark_returns(self, 
+                                   benchmark_data: pd.DataFrame,
+                                   portfolio_history: List[PortfolioSnapshot]) -> List[float]:
+        """Calculate daily benchmark returns aligned with portfolio dates."""
+        
+        # Get portfolio dates
+        portfolio_dates = [snapshot.date for snapshot in portfolio_history]
+        
+        # Align benchmark data with portfolio dates
+        benchmark_returns = []
+        prev_price = None
+        
+        for date in portfolio_dates:
+            # Find closest benchmark data point
+            closest_data = benchmark_data[benchmark_data.index <= date]
+            
+            if closest_data.empty:
+                if prev_price is not None:
+                    benchmark_returns.append(0.0)  # No change if no data
+                continue
+            
+            current_price = closest_data['Close'].iloc[-1]
+            
+            if prev_price is not None:
+                daily_return = (current_price - prev_price) / prev_price
+                benchmark_returns.append(daily_return)
+            
+            prev_price = current_price
+        
+        return benchmark_returns[1:]  # Remove first empty return
+    
+    def _extract_portfolio_returns(self, portfolio_history: List[PortfolioSnapshot]) -> List[float]:
+        """Extract daily returns from portfolio history."""
+        return [snapshot.daily_return for snapshot in portfolio_history[1:]]
+    
+    def _calculate_relative_metrics(self, 
+                                  portfolio_returns: List[float],
+                                  benchmark_returns: List[float]) -> Tuple[float, float, float, float]:
+        """Calculate alpha, beta, information ratio, and tracking error."""
+        
+        if not portfolio_returns or not benchmark_returns:
+            return 0.0, 0.0, 0.0, 0.0
+        
+        # Ensure equal lengths
+        min_length = min(len(portfolio_returns), len(benchmark_returns))
+        portfolio_returns = portfolio_returns[:min_length]
+        benchmark_returns = benchmark_returns[:min_length]
+        
+        if min_length < 2:
+            return 0.0, 0.0, 0.0, 0.0
+        
+        try:
+            # Convert to numpy arrays
+            port_returns = np.array(portfolio_returns)
+            bench_returns = np.array(benchmark_returns)
+            
+            # Calculate excess returns
+            excess_returns = port_returns - bench_returns
+            
+            # Beta (correlation * (portfolio_std / benchmark_std))
+            correlation = np.corrcoef(port_returns, bench_returns)[0, 1] if len(port_returns) > 1 else 0.0
+            port_std = np.std(port_returns)
+            bench_std = np.std(bench_returns)
+            
+            beta = (correlation * (port_std / bench_std)) if bench_std > 0 and not np.isnan(correlation) else 0.0
+            
+            # Alpha (excess return over what beta would predict)
+            port_mean_return = np.mean(port_returns) * 252  # Annualized
+            bench_mean_return = np.mean(bench_returns) * 252  # Annualized
+            alpha = port_mean_return - (beta * bench_mean_return)
+            
+            # Tracking error (volatility of excess returns)
+            tracking_error = np.std(excess_returns) * np.sqrt(252)  # Annualized
+            
+            # Information ratio (excess return / tracking error)
+            excess_mean_return = np.mean(excess_returns) * 252  # Annualized
+            information_ratio = excess_mean_return / tracking_error if tracking_error > 0 else 0.0
+            
+            return alpha, beta, information_ratio, tracking_error
+            
+        except Exception as e:
+            logger.error(f"Error calculating relative metrics: {str(e)}")
+            return 0.0, 0.0, 0.0, 0.0

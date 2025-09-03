@@ -13,6 +13,10 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import logging
 
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 from backtesting.backtest_engine import BacktestEngine, BacktestSettings, BacktestResults
 from backtesting.data_provider import DataProvider, DataRequest
 from backtesting.performance_metrics import PerformanceAnalyzer, ComprehensiveMetrics
