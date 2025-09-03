@@ -12,8 +12,8 @@ import streamlit as st
 from datetime import datetime
 import logging
 
-from ..data_sources.news_api import NewsProvider
-from ..data_sources.market_data import MacroDataProvider
+from data_sources.news_api import NewsProvider
+from data_sources.market_data import MacroDataProvider
 
 logger = logging.getLogger(__name__)
 

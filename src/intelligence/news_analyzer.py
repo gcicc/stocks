@@ -9,7 +9,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 import logging
 
-from ..data_sources.news_api import NewsProvider, NewsArticle
+from data_sources.news_api import NewsProvider, NewsArticle
 
 logger = logging.getLogger(__name__)
 
