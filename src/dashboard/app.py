@@ -1932,35 +1932,6 @@ class PortfolioDashboard:
         </div>
         """, unsafe_allow_html=True)
         
-        # Add feature highlights in columns for better layout
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("""
-            <div style="text-align: center; padding: 1rem; background: white; border-radius: 10px; margin: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">📈</div>
-                <strong style="color: #495057;">TEMA Smoothing</strong><br>
-                <small style="color: #6c757d;">Triple Exponential Moving Average with natural log transformations</small>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("""
-            <div style="text-align: center; padding: 1rem; background: white; border-radius: 10px; margin: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">🤖</div>
-                <strong style="color: #495057;">AI Confidence Scoring</strong><br>
-                <small style="color: #6c757d;">Machine learning algorithms for signal confidence</small>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown("""
-            <div style="text-align: center; padding: 1rem; background: white; border-radius: 10px; margin: 0.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⚡</div>
-                <strong style="color: #495057;">Real-time Processing</strong><br>
-                <small style="color: #6c757d;">Ultra-fast parallel analysis of your entire portfolio</small>
-            </div>
-            """, unsafe_allow_html=True)
     
     def _render_portfolio_distribution(self, portfolio):
         """Render preliminary portfolio distribution graphics."""

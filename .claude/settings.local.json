@@ -13,7 +13,13 @@
       "Bash(python:*)",
       "Bash(dir:*)",
       "Bash(mkdir:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Read(/C:\\Users\\gcicc\\claudeproj\\stocks/**)",
+      "Bash(taskkill:*)",
+      "Bash(TASKKILL /F /IM streamlit.exe)",
+      "Bash(wmic process where name=\"streamlit.exe\":*)",
+      "Read(/C:\\Users\\gcicc\\claudeproj\\stocks\\src\\dashboard/**)",
+      "Read(/C:\\Users\\gcicc\\claudeproj\\stocks\\src\\dashboard/**)"
     ],
     "deny": [],
     "ask": []
